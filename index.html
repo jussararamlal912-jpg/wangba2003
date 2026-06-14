@@ -1,0 +1,1729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>网吧2003</title>
+<style>
+/* ============================================================
+   ROOT VARS
+   ============================================================ */
+:root {
+  --crt-glow: rgba(68,170,255,0.5);
+  --text-main: #ddd;
+  --text-dim: #8ab;
+  --bg-dark: #0a0a0a;
+  --wood-dark: #3a3020;
+  --wood-mid: #5a4a30;
+}
+
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family:'SimSun','FangSong','Microsoft YaHei',serif;
+  background:#000; overflow:hidden; width:100vw; height:100vh;
+  user-select:none; -webkit-user-select:none;
+}
+#game-wrapper {
+  width:1280px; height:720px; margin:0 auto; position:relative;
+  overflow:hidden; background:var(--bg-dark);
+}
+
+/* ============================================================
+   CRT SCANLINES — 全屏覆盖
+   ============================================================ */
+#crt-overlay {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  pointer-events:none; z-index:200;
+  background: repeating-linear-gradient(0deg,
+    rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 2px,
+    transparent 2px, transparent 4px
+  );
+}
+#crt-overlay::after {
+  content:''; position:absolute; top:0;left:0;right:0;bottom:0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.35) 100%);
+  pointer-events:none;
+}
+
+/* ============================================================
+   TITLE SCREEN
+   ============================================================ */
+#title-screen {
+  position:absolute; width:100%; height:100%; z-index:50; cursor:pointer;
+  background:
+    radial-gradient(ellipse at 30% 70%, rgba(68,170,255,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 30%, rgba(68,136,204,0.04) 0%, transparent 50%),
+    linear-gradient(180deg, #0a1628 0%, #0d1f35 40%, #102540 100%);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+}
+#title-screen .bg-particles { position:absolute; width:100%; height:100%; overflow:hidden; }
+#title-screen .particle {
+  position:absolute; width:2px; height:2px; background:#4af;
+  border-radius:50%; animation:floatUp 8s infinite; opacity:0;
+}
+@keyframes floatUp {
+  0% { transform:translateY(110vh); opacity:0; }
+  8% { opacity:0.8; } 85% { opacity:0.1; }
+  100% { transform:translateY(-10vh); opacity:0; }
+}
+#title-screen .title-main {
+  font-size:72px; color:#4af; letter-spacing:18px; z-index:2;
+  text-shadow:0 0 30px rgba(68,170,255,0.7), 0 0 80px rgba(68,170,255,0.3), 0 0 150px rgba(68,170,255,0.1);
+  animation:titleGlow 3s ease-in-out infinite; margin-bottom:12px;
+}
+@keyframes titleGlow {
+  0%,100% { text-shadow:0 0 30px rgba(68,170,255,0.7),0 0 80px rgba(68,170,255,0.3); }
+  50% { text-shadow:0 0 50px rgba(68,170,255,1),0 0 140px rgba(68,170,255,0.5),0 0 200px rgba(68,170,255,0.15); }
+}
+#title-screen .title-sub {
+  font-size:20px; color:var(--text-dim); letter-spacing:10px; z-index:2; margin-bottom:60px;
+}
+#title-screen .title-hint {
+  font-size:15px; color:rgba(136,170,187,0.5); z-index:2;
+  animation:blink 2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:0.55;} 50%{opacity:0.12;} }
+#title-screen .title-deco {
+  position:absolute; bottom:50px; font-size:13px;
+  color:rgba(136,170,187,0.2); z-index:2; letter-spacing:3px;
+}
+
+/* ============================================================
+   DAYTIME SCREEN
+   ============================================================ */
+#daytime-screen {
+  position:absolute; width:100%; height:100%; display:none;
+  background:#1a1815; overflow:hidden;
+}
+/* 背景照片层 — 放在所有元素下面 */
+#scene-bg-photo {
+  position:absolute; width:100%; height:100%;
+  background-size:cover; background-position:center;
+  opacity:0; transition:opacity 1.2s ease-in-out;
+  z-index:0;
+}
+#scene-bg-photo.loaded { opacity:1; }
+/* 有背景图时给房间元素加半透明遮罩让它融入 */
+#wangba-room { position:absolute; width:100%; height:100%; z-index:1; }
+/* 有照片时：隐藏所有CSS绘制的硬件，融入背景 */
+#wangba-room.with-bg #back-wall,
+#wangba-room.with-bg #floor,
+#wangba-room.with-bg #ceiling-lights,
+#wangba-room.with-bg #window-area,
+#wangba-room.with-bg .wall-poster,
+#wangba-room.with-bg #wall-clock { display:none; }
+#wangba-room.with-bg #counter-area { opacity:0.85; }
+#wangba-room.with-bg #noodle-shelf { opacity:0.85; }
+/* 关键：有照片时隐藏CSS画的电脑硬件 */
+#wangba-room.with-bg .crt-monitor,
+#wangba-room.with-bg .crt-base,
+#wangba-room.with-bg .keyboard,
+#wangba-room.with-bg .desk-top,
+#wangba-room.with-bg .desk-legs { display:none; }
+/* 角色变成浮在照片上的可点击头像 */
+#wangba-room.with-bg .char-at-desk {
+  width:80px; height:80px; border-radius:50%;
+  font-size:28px; bottom:auto; top:50%; transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.6) !important;
+  border:2px solid rgba(255,255,255,0.25);
+  box-shadow:0 0 20px rgba(0,0,0,0.5);
+  cursor:pointer;
+}
+#wangba-room.with-bg .char-name-tag {
+  bottom:auto; top:calc(50% + 48px);
+}
+#wangba-room.with-bg .computer-station {
+  /* 热区变大，方便点击 */
+  width:100px; height:100px;
+}
+#wangba-room.with-bg .computer-station:hover .char-at-desk {
+  border-color:rgba(68,170,255,0.7);
+  box-shadow:0 0 30px rgba(68,170,255,0.4);
+  transform:translate(-50%,-50%) scale(1.1);
+}
+#wangba-room.with-bg .hover-hint { display:none; }
+#wangba-room.with-bg .computer-station.gone .char-at-desk {
+  opacity:0.2; border-color:transparent;
+}
+
+/* 后墙 */
+#back-wall {
+  position:absolute; top:50px; left:0; width:100%; height:52%;
+  background: linear-gradient(180deg, #4a3c2e 0%, #3d3026 100%);
+  border-bottom:4px solid #5a4836;
+}
+#back-wall::after {
+  content:''; position:absolute; top:0;left:0;width:100%;height:100%;
+  background: repeating-linear-gradient(90deg, transparent 0px, transparent 196px, rgba(0,0,0,0.06) 196px, rgba(0,0,0,0.06) 200px);
+}
+
+/* 天花板灯 */
+#ceiling-lights {
+  position:absolute; top:0; left:0; width:100%; height:50px;
+  background: linear-gradient(180deg, rgba(20,16,10,0.9) 0%, transparent 100%);
+}
+.ceiling-lamp {
+  position:absolute; top:10px; width:120px; height:6px;
+  background:rgba(255,240,200,0.2); border-radius:50%; filter:blur(6px);
+}
+
+/* 窗户 */
+#window-area {
+  position:absolute; left:30px; top:90px; width:170px; height:120px;
+  background: linear-gradient(180deg, #6a8aaa 0%, #8ab8d8 35%, #c8d8e8 100%);
+  border:6px solid #4a3a28; border-radius:2px;
+  box-shadow: inset 0 0 25px rgba(200,220,240,0.25);
+}
+#window-area::after {
+  content:''; position:absolute; top:0; left:50%; width:4px; height:100%; background:#4a3a28;
+}
+
+/* 挂钟 */
+#wall-clock {
+  position:absolute; top:65px; left:50%; transform:translateX(-50%);
+  width:72px; height:72px; border-radius:50%; background:#f2e6d0;
+  border:4px solid #5a3a20; box-shadow:0 2px 12px rgba(0,0,0,0.5);
+  display:flex; align-items:center; justify-content:center;
+  z-index:2;
+}
+#wall-clock::after { content:'11:59'; font-size:16px; font-weight:bold; color:#3a2010; }
+
+/* 海报 */
+.wall-poster {
+  position:absolute; border:2px solid #5a4836;
+  box-shadow:2px 2px 10px rgba(0,0,0,0.5);
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; text-align:center; line-height:1.4;
+}
+#poster-cs {
+  top:75px; left:140px; width:90px; height:130px;
+  background:linear-gradient(135deg, #1a2e10 0%, #2a4a1a 50%, #1a2e10 100%);
+  color:#8a8; font-size:13px;
+}
+#poster-cs::after { content:'C\\\\S 1.6\n局域网对战\n每日开服'; white-space:pre; }
+#poster-wow {
+  top:85px; right:220px; width:80px; height:115px;
+  background:linear-gradient(135deg, #102040 0%, #1a3a5a 50%, #102040 100%);
+  color:#8ac; font-size:11px;
+}
+#poster-wow::after { content:'魔兽世界\n2003'; white-space:pre; }
+
+/* 地板 */
+#floor {
+  position:absolute; bottom:0; left:0; width:100%; height:42%;
+  background:linear-gradient(180deg, #3a2a1a 0%, #2a1808 40%, #1a0a00 100%);
+}
+#floor::before {
+  content:''; position:absolute; top:0;left:0;width:100%;height:100%;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 38px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 75px);
+}
+
+/* ============================================================
+   COMPUTER STATIONS
+   ============================================================ */
+.computer-station {
+  position:absolute; cursor:pointer; display:flex;
+  flex-direction:column; align-items:center;
+  transition:transform 0.25s, filter 0.25s; z-index:5;
+}
+.computer-station:hover { transform:translateY(-6px); }
+.computer-station:hover .crt-screen { filter:brightness(1.35); }
+.computer-station.gone { opacity:0.3; pointer-events:none; filter:grayscale(0.8); }
+.computer-station.gone .crt-screen { background:#111 !important; box-shadow:none !important; }
+
+/* CRT Monitor */
+.crt-monitor {
+  position:relative; width:115px; height:95px;
+  background:linear-gradient(180deg, #e2dac8 0%, #cac2b0 55%, #a09888 100%);
+  border-radius:12px 12px 2px 2px; box-shadow:0 4px 14px rgba(0,0,0,0.6);
+}
+.crt-screen {
+  position:absolute; top:8px; left:10px; width:95px; height:68px;
+  background: radial-gradient(ellipse at center, #1a3a5a 0%, #0a1a2a 100%);
+  border-radius:8px 8px 2px 2px;
+  box-shadow: inset 0 0 30px rgba(68,136,204,0.3);
+  transition: filter 0.3s;
+}
+.crt-screen::after { content:''; position:absolute; top:2px;left:3px;width:89px;height:1px;background:rgba(255,255,255,0.04); }
+.crt-base { width:48px; height:8px; background:#888078; border-radius:0 0 4px 4px; margin-top:-2px; }
+.keyboard { width:95px; height:15px; background:#d0c8b8; border-radius:3px; margin-top:5px; box-shadow:0 1px 3px rgba(0,0,0,0.3); }
+.desk-top { width:150px; height:10px; background:linear-gradient(180deg, #6a5030, #5a4020); border-radius:3px; box-shadow:0 2px 8px rgba(0,0,0,0.5); margin-bottom:5px; }
+.desk-legs { width:130px; height:38px; display:flex; justify-content:space-between; margin-bottom:3px; }
+.desk-leg { width:7px; height:38px; background:linear-gradient(90deg, #4a3a20, #5a4a2a); border-radius:2px; }
+
+/* Character sprite */
+.char-at-desk {
+  position:absolute; bottom:-32px; left:50%; transform:translateX(-50%);
+  width:66px; height:110px; border-radius:16px 16px 4px 4px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:34px; font-weight:bold; color:rgba(255,255,255,0.7);
+  transition:all 0.3s; z-index:6;
+}
+.char-at-desk.has-image {
+  background-size:contain !important;
+  background-position:center bottom !important;
+  background-repeat:no-repeat !important;
+  font-size:0; width:90px; height:140px; border-radius:0;
+}
+.char-name-tag {
+  position:absolute; bottom:-22px; left:50%; transform:translateX(-50%);
+  font-size:10px; color:#ccc; background:rgba(0,0,0,0.75);
+  padding:2px 8px; border-radius:8px; white-space:nowrap;
+}
+.hover-hint {
+  position:absolute; top:-28px; left:50%; transform:translateX(-50%);
+  font-size:10px; color:#8cf; background:rgba(0,0,0,0.85);
+  padding:2px 10px; border-radius:10px; white-space:nowrap;
+  opacity:0; transition:opacity 0.3s; pointer-events:none;
+}
+.computer-station:hover .hover-hint { opacity:1; }
+
+/* ============================================================
+   COUNTER
+   ============================================================ */
+#counter-area {
+  position:absolute; right:0; top:140px; bottom:160px; width:250px; z-index:8;
+}
+#counter-sign {
+  position:absolute; right:18px; top:10px; font-size:12px;
+  color:#d4c4a0; letter-spacing:3px; z-index:9;
+  background:rgba(0,0,0,0.6); padding:3px 10px; border-radius:8px;
+}
+#counter-top {
+  width:240px; height:12px; background:linear-gradient(180deg, #7a6038, #6a5030);
+  border-radius:3px; position:absolute; right:-4px; top:38px;
+  box-shadow:0 3px 12px rgba(0,0,0,0.6); z-index:1;
+}
+#counter {
+  position:absolute; right:0; top:46px; width:230px; height:240px;
+  background:linear-gradient(180deg, #5a4a30, #4a3a20);
+  border-radius:6px 0 0 6px; box-shadow:-4px 0 20px rgba(0,0,0,0.7);
+  display:flex; flex-direction:column; padding:10px; gap:18px;
+}
+#counter-hotspot {
+  width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+  font-size:20px; cursor:pointer; border-radius:50%;
+  animation:hotspotPulse 2s ease-in-out infinite; margin:8px auto;
+  background:rgba(255,200,100,0.08);
+}
+@keyframes hotspotPulse {
+  0%,100% { box-shadow:0 0 6px rgba(255,200,100,0.2); }
+  50% { box-shadow:0 0 22px rgba(255,200,100,0.55); }
+}
+
+/* 泡面架 */
+#noodle-shelf {
+  position:absolute; right:8px; top:70px; width:195px; z-index:9;
+}
+.shelf-row {
+  width:100%; height:26px; background:rgba(0,0,0,0.25);
+  border-bottom:1px solid rgba(255,255,255,0.04);
+  display:flex; align-items:center; padding:0 6px; gap:6px;
+  font-size:9px; color:#998;
+}
+.noodle-cup { width:32px; height:18px; border-radius:3px; display:flex; align-items:center; justify-content:center; font-size:7px; }
+.noodle-cup.beef { background:#c44; color:#fff; }
+.noodle-cup.pork { background:#e8d0a0; color:#860; }
+.noodle-cup.shrimp { background:#f8d8d0; color:#844; }
+
+/* 灰尘粒子 */
+.dust-particle {
+  position:absolute; width:2px; height:2px; background:#ffe;
+  border-radius:50%; opacity:0; z-index:3;
+  animation:dustDrift 7s linear infinite;
+}
+@keyframes dustDrift {
+  0% { opacity:0; transform:translate(0,0); }
+  15% { opacity:0.5; }
+  85% { opacity:0.08; }
+  100% { opacity:0; transform:translate(15px,-50px); }
+}
+
+/* 热点 */
+.hotspot {
+  position:absolute; cursor:pointer; z-index:15;
+  border-radius:50%; transition:transform 0.2s;
+}
+.hotspot:hover { transform:scale(1.25); }
+.hotspot-label {
+  position:absolute; top:-16px; left:50%; transform:translateX(-50%);
+  font-size:9px; color:#ffc864; background:rgba(0,0,0,0.75);
+  padding:1px 6px; border-radius:4px; white-space:nowrap;
+}
+
+/* ============================================================
+   DIALOGUE BOX
+   ============================================================ */
+#dialogue-box {
+  position:absolute; bottom:0; left:0; width:100%; min-height:125px;
+  background:linear-gradient(0deg, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 100%);
+  border-top:2px solid rgba(68,170,255,0.2); z-index:30;
+  padding:12px 28px; display:none;
+}
+#dialogue-speaker { font-size:15px; color:#4af; margin-bottom:3px; font-weight:bold; }
+#dialogue-text { font-size:17px; color:var(--text-main); line-height:1.6; min-height:32px; }
+#dialogue-choices { display:flex; flex-direction:column; gap:5px; margin-top:6px; }
+.dialogue-choice {
+  font-size:15px; color:#8cf; padding:5px 14px; cursor:pointer;
+  background:rgba(68,170,255,0.05); border:1px solid rgba(68,170,255,0.12);
+  border-radius:6px; transition:all 0.2s; display:inline-block; max-width:580px;
+}
+.dialogue-choice:hover { background:rgba(68,170,255,0.16); border-color:rgba(68,170,255,0.35); color:#fff; }
+#dialogue-next {
+  position:absolute; bottom:14px; right:28px; font-size:12px;
+  color:rgba(255,255,255,0.3); animation:blink 1.5s infinite;
+}
+
+/* ============================================================
+   HUD
+   ============================================================ */
+#hud {
+  position:absolute; top:0; left:0; width:100%; height:34px;
+  background:rgba(0,0,0,0.85); border-bottom:1px solid rgba(68,170,255,0.12);
+  display:none; align-items:center; padding:0 12px; z-index:25;
+  gap:16px; font-size:12px; color:var(--text-dim);
+}
+.hud-item { display:flex; align-items:center; gap:4px; }
+.hud-val { color:#4af; font-weight:bold; }
+.hud-btn {
+  padding:3px 10px; font-size:11px; color:var(--text-dim);
+  background:rgba(68,170,255,0.06); border:1px solid rgba(68,170,255,0.12);
+  border-radius:4px; cursor:pointer; font-family:inherit;
+  transition:all 0.2s;
+}
+.hud-btn:hover { background:rgba(68,170,255,0.18); color:#fff; }
+.hud-btn.music-on { color:#8f8; border-color:rgba(100,255,100,0.3); }
+.hud-btn.music-off { color:#f88; border-color:rgba(255,100,100,0.3); }
+
+/* ============================================================
+   QQ SCREEN — now uses night background photo
+   ============================================================ */
+#qq-screen {
+  position:absolute; width:100%; height:100%; display:none;
+  z-index:30;
+  /* Background: night photo as wallpaper behind QQ window */
+  background: #0a0a10;
+}
+#qq-bg-photo {
+  position:absolute; width:100%; height:100%;
+  background: url('images/backgrounds/夜晚网吧.jpg') center/cover no-repeat;
+  opacity:0.25; filter:blur(2px) brightness(0.5);
+}
+#qq-window {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:860px; height:580px;
+  background:rgba(255,255,255,0.95);
+  border:2px solid #005aab; border-radius:8px 8px 0 0;
+  display:flex; flex-direction:column;
+  box-shadow:0 0 60px rgba(0,30,80,0.5), 0 0 120px rgba(0,30,80,0.2);
+}
+#qq-titlebar {
+  height:29px; background:linear-gradient(180deg, #1a80d8 0%, #005aab 100%);
+  border-radius:6px 6px 0 0; display:flex; align-items:center;
+  padding:0 10px; gap:8px;
+}
+#qq-titlebar .qq-title-icon { width:16px; height:16px; background:#fff; border-radius:3px; display:flex; align-items:center; justify-content:center; font-size:10px; color:#005aab; }
+#qq-titlebar .qq-title-text { font-size:12px; color:#fff; flex:1; }
+.qq-title-btn { width:18px; height:18px; background:rgba(255,255,255,0.15); border-radius:3px; font-size:10px; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.qq-title-btn:hover { background:rgba(255,255,255,0.35); }
+#qq-body { flex:1; display:flex; border-top:1px solid #ddd; }
+#qq-sidebar {
+  width:200px; background:#f0f4f8; border-right:1px solid #d0d8e0;
+  padding:10px; overflow-y:auto;
+}
+.qq-user-info { display:flex; align-items:center; gap:7px; padding:7px; background:#e8eef4; border-radius:6px; margin-bottom:10px; }
+.qq-avatar-sm { width:34px; height:34px; border-radius:6px; background:#8ab; display:flex; align-items:center; justify-content:center; font-size:14px; color:#fff; }
+.qq-nickname { font-size:12px; color:#333; font-weight:bold; }
+.qq-status { font-size:10px; color:#6a6; }
+#qq-contact-list { list-style:none; }
+#qq-contact-list li {
+  padding:7px; cursor:pointer; border-radius:4px; display:flex;
+  align-items:center; gap:7px; font-size:12px; color:#333;
+}
+#qq-contact-list li.active { background:#d0e0f0; font-weight:bold; }
+.contact-avatar { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; color:#fff; }
+.contact-status { margin-left:auto; width:6px; height:6px; border-radius:50%; }
+.contact-status.online { background:#4a4; }
+#qq-chat-area { flex:1; display:flex; flex-direction:column; background:#fafcfe; }
+#qq-chat-log { flex:1; padding:14px; overflow-y:auto; display:flex; flex-direction:column; gap:7px; }
+.qq-msg {
+  max-width:62%; padding:6px 12px; border-radius:13px;
+  font-size:13px; line-height:1.5; animation:msgIn 0.3s ease-out;
+}
+@keyframes msgIn { from{opacity:0;transform:translateY(5px);} to{opacity:1;transform:translateY(0);} }
+.qq-msg.other { align-self:flex-start; background:#e8eef4; color:#222; border-bottom-left-radius:3px; }
+.qq-msg.self { align-self:flex-end; background:#b0d4f0; color:#111; border-bottom-right-radius:3px; }
+.qq-msg .msg-time { font-size:8px; color:#999; margin-top:2px; text-align:right; }
+.qq-msg.typing { background:#e0e8f0; color:#888; font-style:italic; }
+#qq-input-area { height:95px; border-top:1px solid #d0d8e0; padding:8px; display:flex; flex-direction:column; gap:5px; }
+#qq-input-toolbar { display:flex; gap:10px; font-size:12px; color:#666; }
+#qq-choices { display:flex; gap:5px; flex-wrap:wrap; }
+.qq-choice-btn {
+  padding:3px 12px; font-size:12px; color:#1a80d8;
+  background:#e8f0f8; border:1px solid #b0d0e8; border-radius:12px;
+  cursor:pointer; font-family:inherit; transition:all 0.2s;
+}
+.qq-choice-btn:hover { background:#d0e4f4; color:#005aab; }
+#qq-input-box { flex:1; border:1px solid #c0c8d0; border-radius:6px; padding:5px 10px; font-size:13px; font-family:inherit; resize:none; outline:none; }
+#qq-input-box:focus { border-color:#005aab; }
+#qq-send-btn { align-self:flex-end; padding:4px 16px; background:#1a80d8; color:#fff; border:none; border-radius:4px; cursor:pointer; font-family:inherit; font-size:12px; }
+#qq-send-btn:hover { background:#005aab; }
+
+/* ============================================================
+   KEYWORD BOARD
+   ============================================================ */
+#keyword-overlay {
+  position:absolute; width:100%; height:100%;
+  background:rgba(0,0,0,0.9); display:none; z-index:40;
+  flex-direction:column; align-items:center; justify-content:center;
+}
+#keyword-overlay.show { display:flex; }
+#keyword-board {
+  width:800px; height:500px; background:var(--wood-dark);
+  border:8px solid var(--wood-mid); border-radius:4px; padding:26px;
+  position:relative;
+  box-shadow:0 0 50px rgba(0,0,0,0.6), inset 0 0 80px rgba(0,0,0,0.35);
+}
+#keyword-board .board-title { font-size:20px; color:#d4c4a0; text-align:center; margin-bottom:18px; letter-spacing:4px; }
+.cork-grid { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+.keyword-card {
+  width:145px; padding:10px; background:#f4e8c0;
+  border:1px solid #c0b080; font-size:11px; color:#333;
+  text-align:center; cursor:pointer; position:relative;
+  box-shadow:2px 2px 6px rgba(0,0,0,0.3); transition:transform 0.2s;
+  font-family:'SimSun',serif;
+}
+.keyword-card:hover { transform:rotate(-2deg) scale(1.05); }
+.keyword-card.locked { background:#c0b8a0; color:#888; cursor:not-allowed; }
+.keyword-card.locked::after { content:'?'; font-size:24px; color:#999; }
+.keyword-card .pin { position:absolute; top:-6px; left:50%; transform:translateX(-50%); width:11px; height:11px; background:#d44; border-radius:50%; box-shadow:1px 1px 2px rgba(0,0,0,0.4); }
+.board-close { position:absolute; top:6px; right:12px; font-size:20px; color:#a09070; cursor:pointer; background:none; border:none; font-family:inherit; }
+.board-close:hover { color:#fff; }
+
+/* ============================================================
+   TOAST & TRANSITION
+   ============================================================ */
+#toast {
+  position:absolute; top:48px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.92); color:#ffc864; padding:7px 20px;
+  border-radius:20px; font-size:13px; z-index:50; display:none;
+  border:1px solid rgba(255,200,100,0.2); animation:toastIn 0.4s ease-out;
+}
+@keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(-12px);} to{opacity:1;transform:translateX(-50%) translateY(0);} }
+#transition-screen {
+  position:absolute; width:100%; height:100%;
+  display:none; z-index:45; flex-direction:column;
+  align-items:center; justify-content:center;
+  /* Night background as transition backdrop */
+  background: url('images/backgrounds/夜晚网吧.jpg') center/cover no-repeat;
+  color:#c8d8e8; font-size:20px; letter-spacing:4px;
+}
+#transition-screen::before {
+  content:''; position:absolute; top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,0.75);
+}
+#transition-screen > * { position:relative; z-index:1; }
+#transition-screen .trans-time {
+  font-size:48px; color:#4af; margin-bottom:8px;
+  text-shadow:0 0 20px rgba(68,170,255,0.5);
+}
+#transition-screen .trans-hint {
+  font-size:13px; color:rgba(200,216,232,0.5); margin-top:12px;
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(136,170,187,0.2); border-radius:3px; }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width:1300px) {
+  #game-wrapper { width:100vw; height:56.25vw; max-height:100vh; }
+  #qq-window { width:90%; height:80%; }
+}
+</style>
+</head>
+<body>
+
+<div id="game-wrapper">
+
+  <!-- CRT Scanlines -->
+  <div id="crt-overlay"></div>
+
+  <!-- ====== AMBIENT AUDIO SYSTEM ====== -->
+  <audio id="bgm" loop preload="auto">
+    <source src="Quiet_Room_At_Three(1).mp3" type="audio/mpeg">
+  </audio>
+
+  <!-- ====== TITLE SCREEN ====== -->
+  <div id="title-screen" onclick="startGame()">
+    <div class="bg-particles" id="particles"></div>
+    <div class="title-main">网吧2003</div>
+    <div class="title-sub">W A N G B A &nbsp; 2 0 0 3</div>
+    <div class="title-hint">— 点击任意位置开始 —</div>
+    <div class="title-deco">有些对话，等了二十年才被听见</div>
+  </div>
+
+  <!-- ====== DAYTIME SCREEN ====== -->
+  <div id="daytime-screen">
+    <!-- 背景照片 — 你生成的网吧内部图会显示在这里 -->
+    <div id="scene-bg-photo"></div>
+    <div id="wangba-room">
+
+      <!-- 后墙 -->
+      <div id="back-wall"></div>
+      <!-- 天花板 -->
+      <div id="ceiling-lights">
+        <div class="ceiling-lamp" style="left:20%;"></div>
+        <div class="ceiling-lamp" style="left:45%;"></div>
+        <div class="ceiling-lamp" style="left:70%;"></div>
+      </div>
+      <!-- 窗户 -->
+      <div id="window-area"></div>
+      <!-- 挂钟 -->
+      <div id="wall-clock"></div>
+      <!-- 海报 -->
+      <div class="wall-poster" id="poster-cs"></div>
+      <div class="wall-poster" id="poster-wow"></div>
+      <!-- 地板 -->
+      <div id="floor"></div>
+
+      <!-- ===== 电脑桌 + 角色 ===== -->
+      <!-- 后排 -->
+      <div class="computer-station" id="station-wangshu" style="left:320px;top:200px;" onclick="talkToCharacter('wangshu')">
+        <div class="crt-monitor"><div class="crt-screen" style="background:radial-gradient(ellipse at center, #2a3a2a 0%, #0a1a0a 100%);box-shadow:inset 0 0 25px rgba(68,136,100,0.2);"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-wangshu" style="background:#5A7A9A;">王</div>
+        <div class="char-name-tag">王叔</div><div class="hover-hint">💬 对话</div>
+      </div>
+      <div class="computer-station" id="station-xiaolin" style="left:440px;top:210px;" onclick="talkToCharacter('xiaolin')">
+        <div class="crt-monitor"><div class="crt-screen"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-xiaolin" style="background:#6B8E23;">林</div>
+        <div class="char-name-tag">小林</div><div class="hover-hint">💬 对话</div>
+      </div>
+      <div class="computer-station" id="station-laoli" style="left:560px;top:200px;" onclick="talkToCharacter('laoli')">
+        <div class="crt-monitor"><div class="crt-screen" style="background:radial-gradient(ellipse at center, #3a1a0a 0%, #0a0a0a 100%);"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-laoli" style="background:#8B7355;">李</div>
+        <div class="char-name-tag">老李</div><div class="hover-hint">💬 对话</div>
+      </div>
+
+      <!-- 前排 -->
+      <div class="computer-station" id="station-meiyi" style="left:340px;top:320px;" onclick="talkToCharacter('meiyi')">
+        <div class="crt-monitor"><div class="crt-screen" style="background:radial-gradient(ellipse at center, #0a0a0a 0%, #000 100%);box-shadow:none;"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-meiyi" style="background:#7A6A8A;">梅</div>
+        <div class="char-name-tag">梅姨</div><div class="hover-hint">💬 对话</div>
+      </div>
+      <div class="computer-station" id="station-shitou" style="left:480px;top:310px;z-index:7;" onclick="talkToCharacter('shitou')">
+        <div class="crt-monitor"><div class="crt-screen" style="background:radial-gradient(ellipse at center, #1a2a0a 0%, #0a1a00 100%);box-shadow:inset 0 0 35px rgba(100,200,50,0.35);"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-shitou" style="background:#6A6A6A;">石</div>
+        <div class="char-name-tag">石头</div><div class="hover-hint">💬 对话</div>
+      </div>
+      <div class="computer-station" id="station-xiaozhou" style="left:620px;top:320px;" onclick="talkToCharacter('xiaozhou')">
+        <div class="crt-monitor"><div class="crt-screen"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-xiaozhou" style="background:#D08090;">周</div>
+        <div class="char-name-tag">小周</div><div class="hover-hint">💬 对话</div>
+      </div>
+
+      <!-- 角落：阿杰 -->
+      <div class="computer-station" id="station-ajie" style="left:70px;top:340px;" onclick="talkToCharacter('ajie')">
+        <div class="crt-monitor"><div class="crt-screen" style="background:radial-gradient(ellipse at center, #0a0a1a 0%, #000 100%);box-shadow:inset 0 0 8px rgba(68,68,136,0.15);"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-ajie" style="background:#4A5A5A;height:85px;">杰</div>
+        <div class="char-name-tag">阿杰</div><div class="hover-hint">💬 对话</div>
+      </div>
+
+      <!-- 阿芳 -->
+      <div class="computer-station" id="station-afang" style="right:290px;top:290px;" onclick="talkToCharacter('afang')">
+        <div class="crt-monitor"><div class="crt-screen"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-afang" style="background:#C04060;">芳</div>
+        <div class="char-name-tag">阿芳</div><div class="hover-hint">💬 对话</div>
+      </div>
+
+      <!-- 陈警官 -->
+      <div class="computer-station" id="station-chen" style="right:440px;top:295px;" onclick="talkToCharacter('chen')">
+        <div class="crt-monitor"><div class="crt-screen" style="background:radial-gradient(ellipse at center, #1a2a1a 0%, #0a1a0a 100%);"></div></div><div class="crt-base"></div>
+        <div class="keyboard"></div><div class="desk-top"></div><div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+        <div class="char-at-desk" id="sprite-chen" style="background:#3A5A3A;">陈</div>
+        <div class="char-name-tag">陈警官</div><div class="hover-hint">💬 对话</div>
+      </div>
+
+      <!-- 柜台区 -->
+      <div id="counter-area">
+        <div id="counter-sign">⭐ 星际网吧</div>
+        <div id="counter-top"></div>
+        <div id="counter">
+          <div style="font-size:10px;color:#a08060;">💰 收银台</div>
+          <div id="counter-hotspot" onclick="handleCounterClick()">📋</div>
+        </div>
+        <div id="noodle-shelf">
+          <div class="shelf-row">🍜 <span class="noodle-cup beef">红烧</span><span class="noodle-cup beef">红烧</span><span class="noodle-cup beef">红烧</span></div>
+          <div class="shelf-row"><span class="noodle-cup pork">排骨</span><span class="noodle-cup pork">排骨</span></div>
+          <div class="shelf-row"><span class="noodle-cup shrimp">鲜虾</span><span class="noodle-cup shrimp">鲜虾</span><span class="noodle-cup shrimp">鲜虾</span><span class="noodle-cup shrimp">鲜虾</span></div>
+        </div>
+      </div>
+
+      <!-- 灰尘粒子 -->
+      <div id="dust-container"></div>
+    </div>
+
+    <!-- 对话框 -->
+    <div id="dialogue-box">
+      <div id="dialogue-speaker"></div>
+      <div id="dialogue-text"></div>
+      <div id="dialogue-choices"></div>
+      <div id="dialogue-next">▼ 点击继续 / 空格</div>
+    </div>
+  </div>
+
+  <!-- ====== HUD ====== -->
+  <div id="hud">
+    <div class="hud-item">📅 第<span class="hud-val" id="hud-day">1</span>天</div>
+    <div class="hud-item">💰 ¥<span class="hud-val" id="hud-money">500</span></div>
+    <div class="hud-item">🔑 <span class="hud-val" id="hud-keywords">0</span>/9</div>
+    <div style="flex:1;"></div>
+    <button class="hud-btn music-on" id="btn-music" onclick="toggleMusic()">🎵 BGM</button>
+    <button class="hud-btn" onclick="saveGame()">💾 存档</button>
+    <button class="hud-btn" onclick="loadGame()">📂 读档</button>
+    <button class="hud-btn" onclick="toggleKeywordBoard()">📋 线索板</button>
+    <button class="hud-btn" style="color:#f8c864;border-color:rgba(255,200,100,0.3);" onclick="transitionToNight()">🌙 打烊</button>
+  </div>
+
+  <!-- ====== QQ SCREEN ====== -->
+  <div id="qq-screen">
+    <div id="qq-bg-photo"></div>
+    <div id="qq-window">
+      <div id="qq-titlebar">
+        <div class="qq-title-icon">Q</div>
+        <div class="qq-title-text">QQ2003 — 与 陌生人 聊天中</div>
+        <div class="qq-title-btn">─</div>
+        <div class="qq-title-btn">□</div>
+        <div class="qq-title-btn" onclick="endQQSession()">✕</div>
+      </div>
+      <div id="qq-body">
+        <div id="qq-sidebar">
+          <div class="qq-user-info">
+            <div class="qq-avatar-sm" id="qq-my-avatar">我</div>
+            <div><div class="qq-nickname" id="qq-my-name">网吧老板</div><div class="qq-status">🟢 在线</div></div>
+          </div>
+          <ul id="qq-contact-list">
+            <li class="active">
+              <div class="contact-avatar" style="background:#6af;">?</div>
+              <span>陌生人</span><div class="contact-status online"></div>
+            </li>
+          </ul>
+        </div>
+        <div id="qq-chat-area">
+          <div id="qq-chat-log"></div>
+          <div id="qq-input-area">
+            <div id="qq-input-toolbar"><span>😊 表情</span><span>📎 文件</span><span>🎵 音乐</span></div>
+            <div id="qq-choices"></div>
+            <textarea id="qq-input-box" rows="2" placeholder="输入消息...（或从上方选择回复）"></textarea>
+            <button id="qq-send-btn" onclick="sendQQMessage()">发送 (S)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== KEYWORD BOARD ====== -->
+  <div id="keyword-overlay">
+    <div id="keyword-board">
+      <div class="board-title">🔍 线索收集板</div>
+      <div class="cork-grid" id="cork-grid"></div>
+      <button class="board-close" onclick="toggleKeywordBoard()">✕</button>
+    </div>
+  </div>
+
+  <!-- ====== TOAST & TRANSITION ====== -->
+  <div id="toast"></div>
+  <div id="transition-screen"></div>
+
+</div>
+
+<script>
+// ============================================================
+// 网吧2003 — GAME ENGINE v2
+// ============================================================
+
+// --- AUDIO SYSTEM ---
+const bgm = document.getElementById('bgm');
+let musicOn = true;
+bgm.volume = 0.25;
+
+function setMusicVolume(v) { bgm.volume = Math.max(0, Math.min(1, v)); }
+function fadeMusic(targetVol, duration = 2000) {
+  const steps = 30;
+  const stepTime = duration / steps;
+  const startVol = bgm.volume;
+  const delta = (targetVol - startVol) / steps;
+  let i = 0;
+  clearInterval(bgm._fadeInterval);
+  bgm._fadeInterval = setInterval(() => {
+    i++;
+    setMusicVolume(startVol + delta * i);
+    if (i >= steps) { clearInterval(bgm._fadeInterval); setMusicVolume(targetVol); }
+  }, stepTime);
+}
+
+function toggleMusic() {
+  musicOn = !musicOn;
+  const btn = document.getElementById('btn-music');
+  if (musicOn) {
+    bgm.play().catch(() => {});
+    btn.textContent = '🎵 BGM';
+    btn.className = 'hud-btn music-on';
+    setMusicVolume(0.25);
+    showToast('🎵 音乐：开');
+  } else {
+    fadeMusic(0, 500);
+    setTimeout(() => { bgm.pause(); }, 600);
+    btn.textContent = '🔇 静音';
+    btn.className = 'hud-btn music-off';
+    showToast('🔇 音乐：关');
+  }
+}
+
+// --- STATE ---
+const STATE = {
+  day:1, timeOfDay:'morning', money:500, reputation:50,
+  keywords:[], inventory:[], flags:{}, relationships:{},
+  qqHistory:[], currentScene:null, dialogueQueue:[], dialogueIndex:0,
+  _onQueueEnd:null
+};
+
+// --- CHARACTERS ---
+const CHARACTERS = {
+  laoli:{ id:'laoli',name:'老李',age:'45岁',label:'下岗工人',color:'#8B7355',initial:'李',imgPath:'images/characters/laoli.png',schedule:{morning:true,afternoon:true},
+    /* 照片中的位置 — 调这里！x=左%, y=上% (0=左上角) */
+    photoX:42, photoY:48 },
+  xiaolin:{ id:'xiaolin',name:'小林',age:'22岁',label:'大学生',color:'#6B8E23',initial:'林',imgPath:'images/characters/xiaolin.png',schedule:{morning:false,afternoon:true},
+    photoX:48, photoY:42 },
+  afang:{ id:'afang',name:'阿芳',age:'28岁',label:'服装店老板',color:'#C04060',initial:'芳',imgPath:'images/characters/afang.png',schedule:{morning:false,afternoon:true},
+    photoX:70, photoY:35 },
+  wangshu:{ id:'wangshu',name:'王叔',age:'52岁',label:'退休教师',color:'#5A7A9A',initial:'王',imgPath:'images/characters/wangshu.png',schedule:{morning:true,afternoon:false},
+    photoX:30, photoY:40 },
+  xiaozhou:{ id:'xiaozhou',name:'小周',age:'19岁',label:'发廊小妹',color:'#D08090',initial:'周',imgPath:'images/characters/xiaozhou.png',schedule:{morning:false,afternoon:true},
+    photoX:58, photoY:48 },
+  chen:{ id:'chen',name:'陈警官',age:'35岁',label:'民警',color:'#3A5A3A',initial:'陈',imgPath:'images/characters/chenjingguan.png',schedule:{morning:true,afternoon:true},
+    photoX:72, photoY:42 },
+  shitou:{ id:'shitou',name:'石头',age:'16岁',label:'辍学少年',color:'#6A6A6A',initial:'石',imgPath:'images/characters/shitou.png',schedule:{morning:true,afternoon:true},
+    photoX:50, photoY:55 },
+  meiyi:{ id:'meiyi',name:'梅姨',age:'60岁',label:'退休工人',color:'#7A6A8A',initial:'梅',imgPath:'images/characters/meiyi.png',schedule:{morning:true,afternoon:true},
+    photoX:36, photoY:55 },
+  ajie:{ id:'ajie',name:'阿杰',age:'22岁',label:'无业',color:'#4A5A5A',initial:'杰',imgPath:'images/characters/ajie.png',schedule:{morning:false,afternoon:true},
+    photoX:8, photoY:55 },
+};
+
+// --- KEYWORDS ---
+const KEYWORDS = {
+  '1999_12_31':{ name:'1999.12.31',desc:'火车票上的日期——1999年除夕夜。',unlocked:false },
+  'fourth_person':{ name:'失踪的第四个人',desc:'不止一人提到了一个不存在于名单上的"朋友"。',unlocked:false },
+  'uncle_knows':{ name:'舅舅知道',desc:'舅舅生前似乎知道一些事。',unlocked:false },
+  'stand_in':{ name:'替身',desc:'有人在使用假身份。',unlocked:false },
+  'wangba_not_empty':{ name:'网吧不会空',desc:'深夜独自看店时，听到了键盘声。',unlocked:false },
+  'not_me':{ name:'TA不是我',desc:'网友说了一句话："你是不是以为我是……"',unlocked:false },
+  'shared_qq':{ name:'公用QQ',desc:'那个QQ号——不止一个人在登录。',unlocked:false },
+  'fire':{ name:'火灾',desc:'1999年除夕夜的网吧，发生过什么。',unlocked:false },
+  'contract':{ name:'气氛组合同',desc:'一张写在香烟包装纸上的永久合同。',unlocked:false },
+};
+
+// --- DOM SHORTCUT ---
+const $=id=>document.getElementById(id);
+
+// ============================================================
+// INIT
+// ============================================================
+(function initParticles(){
+  const c = document.getElementById('particles');
+  for(let i=0;i<35;i++){
+    const p=document.createElement('div'); p.className='particle';
+    p.style.left=Math.random()*100+'%'; p.style.animationDelay=Math.random()*8+'s';
+    p.style.animationDuration=(6+Math.random()*6)+'s';
+    p.style.width=(1+Math.random()*2)+'px'; p.style.height=p.style.width;
+    c.appendChild(p);
+  }
+})();
+
+(function initDust(){
+  const c = document.getElementById('dust-container');
+  for(let i=0;i<22;i++){
+    const p=document.createElement('div'); p.className='dust-particle';
+    p.style.left=(15+Math.random()*65)+'%'; p.style.top=(15+Math.random()*70)+'%';
+    p.style.animationDelay=Math.random()*6+'s'; p.style.animationDuration=(5+Math.random()*8)+'s';
+    c.appendChild(p);
+  }
+})();
+
+// --- LOAD DAYTIME BACKGROUND PHOTO ---
+function loadDaytimeBackground(){
+  const photoEl = document.getElementById('scene-bg-photo');
+  const roomEl = document.getElementById('wangba-room');
+  const img = new Image();
+  img.onload = ()=>{
+    photoEl.style.backgroundImage = `url('images/backgrounds/网吧白天.jpg')`;
+    photoEl.classList.add('loaded');
+    roomEl.classList.add('with-bg');
+    console.log('🖼️  白天网吧背景图已加载');
+  };
+  img.onerror = ()=>{
+    console.log('ℹ️  未找到白天背景图，使用CSS手绘风格');
+  };
+  img.src = 'images/backgrounds/网吧白天.jpg';
+}
+
+// --- START GAME ---
+function startGame(){
+  document.getElementById('title-screen').style.display='none';
+  document.getElementById('daytime-screen').style.display='block';
+  document.getElementById('hud').style.display='flex';
+  loadDaytimeBackground(); // 尝试加载背景照片
+  // Start background music
+  if(musicOn){ bgm.play().catch(()=>{}); }
+  updateHUD(); renderCharacters(); beginDay();
+}
+
+// --- DAY CYCLE ---
+function beginDay(){
+  STATE.timeOfDay='morning'; STATE.dialogueQueue=[]; STATE.dialogueIndex=0;
+  showDialogueBox(true); runScene('day'+STATE.day+'_morning');
+}
+function transitionToAfternoon(){
+  STATE.timeOfDay='afternoon'; renderCharacters();
+  runScene('day'+STATE.day+'_afternoon');
+}
+function transitionToNight(){
+  STATE.timeOfDay='night'; showDialogueBox(false);
+  // Fade music down for night atmosphere, then back up
+  fadeMusic(0.12, 1500);
+  const tl=document.getElementById('transition-screen');
+  tl.style.display='flex';
+  tl.innerHTML = '<div class="trans-time">23:47</div><div>网吧打烊了</div><div class="trans-hint">登录QQ中...</div>';
+  setTimeout(()=>{
+    tl.style.display='none';
+    fadeMusic(0.2, 2000);
+    startQQSession();
+  }, 2800);
+}
+
+// --- CHARACTER RENDERING ---
+function renderCharacters(){
+  const time=STATE.timeOfDay;
+  const hasBg = document.getElementById('wangba-room').classList.contains('with-bg');
+  const wrapper = document.getElementById('game-wrapper');
+  const wW = wrapper.clientWidth;
+  const wH = wrapper.clientHeight;
+  Object.values(CHARACTERS).forEach(char=>{
+    const station=document.getElementById('station-'+char.id);
+    const sprite=document.getElementById('sprite-'+char.id);
+    if(!station) return;
+    if(!char.schedule[time]){ station.classList.add('gone'); }
+    else {
+      station.classList.remove('gone');
+      // 照片模式：用 photoX/photoY 百分比定位
+      if(hasBg && char.photoX !== undefined){
+        station.style.left = (char.photoX * wW / 100) + 'px';
+        station.style.top = (char.photoY * wH / 100) + 'px';
+        station.style.position = 'absolute';
+      }
+      const img=new Image();
+      img.onload=()=>{
+        if(sprite){
+          sprite.classList.add('has-image');
+          sprite.style.backgroundImage=`url(${char.imgPath})`;
+          sprite.textContent='';
+          if(hasBg){ sprite.style.background='none'; }
+        }
+      };
+      img.onerror=()=>{
+        if(sprite){
+          if(hasBg){
+            sprite.style.background=char.color;
+            sprite.style.borderRadius='50%';
+            sprite.textContent=char.initial;
+            sprite.style.fontSize='28px';
+          } else {
+            sprite.style.background=char.color;
+            sprite.textContent=char.initial;
+          }
+        }
+      };
+      img.src=char.imgPath;
+    }
+  });
+  addHotspots();
+}
+
+function addHotspots(){
+  if(!STATE.inventory.includes('icq_box') && STATE.day<=3){
+    let h=document.getElementById('icq_spot');
+    if(!h){
+      h=document.createElement('div'); h.id='icq_spot'; h.className='hotspot';
+      h.style.cssText='left:410px;top:440px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;';
+      const lbl=document.createElement('div'); lbl.className='hotspot-label'; lbl.textContent='📦';
+      h.appendChild(lbl);
+      h.onclick=()=>{
+        STATE.inventory.push('icq_box');
+        if(h) h.remove();
+        addDialogue('旁白','🔍 3号电脑桌下有一个旧盒子。');
+        addDialogue('旁白','一个ICQ安装光盘的空盒。里面有一张泛黄的便签：');
+        addDialogue('旁白','"舅舅：这个ICQ怎么用？——石头，1999年11月。"');
+        addDialogue('旁白','便签被反复折过很多次。');
+        advanceDialogue();
+      };
+      document.getElementById('wangba-room').appendChild(h);
+    }
+  }
+}
+
+function handleCounterClick(){
+  if(STATE.day===1 && STATE.timeOfDay==='morning' && !STATE.flags.seen_counter_day1){
+    STATE.flags.seen_counter_day1=true; runScene('day1_counter');
+  } else { addDialogue('旁白','收银机、账本、旧报纸。还有那张泛黄的员工守则。'); advanceDialogue(); }
+}
+
+// ============================================================
+// DIALOGUE SYSTEM
+// ============================================================
+function showDialogueBox(s){ const db=document.getElementById('dialogue-box'); db.style.display=s?'block':'none'; if(!s){document.getElementById('dialogue-text').textContent='';document.getElementById('dialogue-choices').innerHTML='';} }
+function addDialogue(speaker,text){ STATE.dialogueQueue.push({speaker,text}); if(STATE.dialogueQueue.length===1) advanceDialogue(); }
+function advanceDialogue(){
+  if(STATE.dialogueQueue.length===0){ document.getElementById('dialogue-next').style.display='none'; return; }
+  document.getElementById('dialogue-next').style.display='block';
+  const d=STATE.dialogueQueue[0];
+  document.getElementById('dialogue-speaker').textContent=d.speaker;
+  typeText(d.text);
+}
+let typeTimer=null;
+function typeText(text,i=0){
+  if(typeTimer) clearTimeout(typeTimer);
+  if(i===0) document.getElementById('dialogue-text').textContent='';
+  if(i<text.length){ document.getElementById('dialogue-text').textContent+=text[i]; typeTimer=setTimeout(()=>typeText(text,i+1),22); }
+}
+function finishDialogue(){
+  if(typeTimer){clearTimeout(typeTimer);typeTimer=null;
+  if(STATE.dialogueQueue.length>0) document.getElementById('dialogue-text').textContent=STATE.dialogueQueue[0].text;}
+}
+function nextDialogue(){
+  if(typeTimer){finishDialogue();return;}
+  STATE.dialogueQueue.shift(); document.getElementById('dialogue-choices').innerHTML='';
+  if(STATE.dialogueQueue.length>0){ advanceDialogue(); }
+  else if(STATE._onQueueEnd){ const cb=STATE._onQueueEnd; STATE._onQueueEnd=null; cb(); }
+}
+document.getElementById('dialogue-box').addEventListener('click',e=>{ if(!e.target.classList.contains('dialogue-choice')) nextDialogue(); });
+document.addEventListener('keydown',e=>{
+  if(e.key===' '||e.key==='Enter'){
+    if(document.getElementById('keyword-overlay').classList.contains('show')) return;
+    if(document.getElementById('qq-screen').style.display==='block') return;
+    nextDialogue(); e.preventDefault();
+  }
+  if(e.key==='k'&&e.ctrlKey){ toggleKeywordBoard(); e.preventDefault(); }
+  if(e.key==='d'&&e.ctrlKey){ toggleDebugMode(); e.preventDefault(); }
+  if(e.key==='s'&&document.getElementById('qq-screen').style.display==='block'){
+    if(document.activeElement!==document.getElementById('qq-input-box')){ sendQQMessage(); e.preventDefault(); }
+  }
+});
+
+// ============================================================
+// SCENES & CHOICES
+// ============================================================
+function runScene(id){ STATE.currentScene=id; const s=SCENES[id]; if(s) s(); }
+function showChoices(choices){
+  document.getElementById('dialogue-choices').innerHTML='';
+  choices.forEach(c=>{
+    const btn=document.createElement('div'); btn.className='dialogue-choice'; btn.textContent=c.text;
+    btn.onclick=e=>{ e.stopPropagation(); document.getElementById('dialogue-choices').innerHTML=''; if(c.flag)STATE.flags[c.flag]=true; if(c.keyword)unlockKeyword(c.keyword); if(c.item)STATE.inventory.push(c.item); if(c.scene)runScene(c.scene); else if(c.action)c.action(); };
+    document.getElementById('dialogue-choices').appendChild(btn);
+  });
+}
+function talkToCharacter(charId){
+  const char=CHARACTERS[charId]; const flagKey='met_'+charId;
+  const deepKey='deep_talk_'+charId; const countKey='talk_count_'+charId;
+  STATE.flags[flagKey]=true; STATE.flags[countKey]=(STATE.flags[countKey]||0)+1;
+  const count=STATE.flags[countKey];
+  if(count===1) runScene('talk_'+charId+'_first');
+  else if(count===3&&!STATE.flags[deepKey]){ STATE.flags[deepKey]=true; runScene('talk_'+charId+'_deep'); renderCharacters(); }
+  else if(count>=5&&STATE.flags[deepKey]) runScene('talk_'+charId+'_repeat');
+  else runScene('talk_'+charId+'_normal');
+}
+
+// --- KEYWORDS ---
+function unlockKeyword(kid){
+  if(STATE.keywords.includes(kid)) return;
+  STATE.keywords.push(kid); KEYWORDS[kid].unlocked=true;
+  showToast('🔑 新线索：'+KEYWORDS[kid].name+''); updateHUD();
+}
+function showToast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block';
+  setTimeout(()=>{t.style.display='none';},3000);
+}
+// --- DEBUG MODE: 显示角色热点位置标注 ---
+let debugMode = false;
+function toggleDebugMode(){
+  debugMode = !debugMode;
+  const hasBg = document.getElementById('wangba-room').classList.contains('with-bg');
+  Object.values(CHARACTERS).forEach(char=>{
+    const station = document.getElementById('station-'+char.id);
+    if(!station) return;
+    let label = station.querySelector('.debug-label');
+    if(debugMode && hasBg){
+      if(!label){
+        label = document.createElement('div');
+        label.className = 'debug-label';
+        label.style.cssText = 'position:absolute;top:-24px;left:50%;transform:translateX(-50%);font-size:10px;color:#f44;background:rgba(0,0,0,0.8);padding:2px 6px;border-radius:4px;white-space:nowrap;z-index:99;pointer-events:none;';
+        station.appendChild(label);
+      }
+      const wW = document.getElementById('game-wrapper').clientWidth;
+      const wH = document.getElementById('game-wrapper').clientHeight;
+      const x = parseInt(station.style.left) || 0;
+      const y = parseInt(station.style.top) || 0;
+      const px = Math.round(x / wW * 100);
+      const py = Math.round(y / wH * 100);
+      label.textContent = char.name + ' ('+px+'%,'+py+'%)';
+      station.style.outline = '2px dashed rgba(255,0,0,0.6)';
+    } else {
+      if(label) label.remove();
+      station.style.outline = '';
+    }
+  });
+  showToast(debugMode ? '🔴 位置调试模式：开 (查看角色坐标)' : '🔴 位置调试模式：关');
+}
+function toggleKeywordBoard(){
+  const ov=document.getElementById('keyword-overlay');
+  if(ov.classList.contains('show')){ ov.classList.remove('show'); return; }
+  const grid=document.getElementById('cork-grid'); grid.innerHTML='';
+  Object.entries(KEYWORDS).forEach(([id,kw])=>{
+    const card=document.createElement('div');
+    card.className='keyword-card'+(kw.unlocked?'':' locked');
+    if(kw.unlocked){ card.innerHTML=`<div class="pin"></div><strong>${kw.name}</strong><br><span style="font-size:10px;color:#666;">${kw.desc}</span>`; card.onclick=()=>showToast('📌 '+kw.name+'：'+kw.desc); }
+    grid.appendChild(card);
+  });
+  ov.classList.add('show');
+}
+function updateHUD(){
+  document.getElementById('hud-day').textContent=STATE.day;
+  document.getElementById('hud-money').textContent=STATE.money;
+  document.getElementById('hud-keywords').textContent=STATE.keywords.length;
+}
+
+// --- SAVE/LOAD ---
+function saveGame(){
+  const data=JSON.parse(JSON.stringify(STATE)); data.dialogueQueue=[]; data._onQueueEnd=null;
+  localStorage.setItem('wangba2003_save',JSON.stringify(data)); showToast('💾 已存档');
+}
+function loadGame(){
+  const raw=localStorage.getItem('wangba2003_save');
+  if(!raw){showToast('⚠️ 没有存档记录');return;}
+  const data=JSON.parse(raw); Object.assign(STATE,data);
+  STATE.dialogueQueue=[]; STATE._onQueueEnd=null; updateHUD();
+  document.getElementById('daytime-screen').style.display='block';
+  document.getElementById('qq-screen').style.display='none';
+  document.getElementById('keyword-overlay').classList.remove('show');
+  beginDay(); showToast('📂 读档成功 — 第'+STATE.day+'天');
+}
+
+// ============================================================
+// QQ CHAT
+// ============================================================
+let qqConvIdx=0, qqCurrentConvo=null;
+function startQQSession(){
+  document.getElementById('daytime-screen').style.display='none';
+  document.getElementById('qq-screen').style.display='block';
+  document.getElementById('qq-chat-log').innerHTML='';
+  document.getElementById('qq-choices').innerHTML='';
+  const cid='qq_day'+STATE.day; qqConvIdx=0;
+  qqCurrentConvo=QQ_CONVOS[cid]||QQ_CONVOS['qq_day1'];
+  addQQMessage('system','—— 登录成功。你好，陌生人。 ——');
+  setTimeout(()=>advanceQQConversation(),800);
+}
+function advanceQQConversation(){
+  if(!qqCurrentConvo||qqConvIdx>=qqCurrentConvo.length){
+    setTimeout(()=>{
+      addQQMessage('system','—— 对方已下线 ——');
+      setTimeout(()=>{ showQQChoices([{text:'关掉电脑，去睡觉',action:endQQSession}]); },1500);
+    },500); return;
+  }
+  const msg=qqCurrentConvo[qqConvIdx]; qqConvIdx++;
+  if(msg.sender==='stranger'){
+    addQQMessage('stranger_typing','对方正在输入...');
+    setTimeout(()=>{
+      const last=document.getElementById('qq-chat-log').lastElementChild;
+      if(last&&last.classList.contains('typing')) last.remove();
+      addQQMessage('stranger',msg.text);
+      if(msg.choices) showQQChoices(msg.choices);
+      else setTimeout(()=>advanceQQConversation(),1400);
+    },1000+Math.random()*1400);
+  } else if(msg.sender==='player'){
+    addQQMessage('player',msg.text); setTimeout(()=>advanceQQConversation(),700);
+  } else if(msg.sender==='system'){
+    addQQMessage('system',msg.text); setTimeout(()=>advanceQQConversation(),500);
+  }
+}
+function addQQMessage(type,text){
+  const div=document.createElement('div');
+  if(type==='stranger'){ div.className='qq-msg other'; div.innerHTML=text+'<div class="msg-time">'+getQQTime()+'</div>'; }
+  else if(type==='player'){ div.className='qq-msg self'; div.innerHTML=text+'<div class="msg-time">'+getQQTime()+'</div>'; }
+  else if(type==='stranger_typing'){ div.className='qq-msg other typing'; div.textContent=text; }
+  else if(type==='system'){ div.style.cssText='text-align:center;font-size:10px;color:#aaa;padding:3px;'; div.textContent=text; }
+  const log=document.getElementById('qq-chat-log'); log.appendChild(div); log.scrollTop=log.scrollHeight;
+}
+function showQQChoices(choices){
+  const container=document.getElementById('qq-choices'); container.innerHTML='';
+  choices.forEach(c=>{
+    const btn=document.createElement('button'); btn.className='qq-choice-btn'; btn.textContent=c.text;
+    btn.onclick=()=>{
+      container.innerHTML='';
+      if(c.flag)STATE.flags[c.flag]=true; if(c.keyword)unlockKeyword(c.keyword);
+      addQQMessage('player',c.text);
+      if(c.nextIndex!==undefined) qqConvIdx=c.nextIndex;
+      setTimeout(()=>advanceQQConversation(),600);
+    };
+    container.appendChild(btn);
+  });
+}
+function getQQTime(){ const h=23-Math.floor(Math.random()*3); const m=Math.floor(Math.random()*60); return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
+function sendQQMessage(){
+  const text=document.getElementById('qq-input-box').value.trim(); if(!text) return;
+  addQQMessage('player',text); document.getElementById('qq-input-box').value='';
+  setTimeout(()=>{ addQQMessage('stranger','……'); setTimeout(()=>advanceQQConversation(),900); },1400);
+}
+function endQQSession(){
+  document.getElementById('qq-screen').style.display='none';
+  document.getElementById('daytime-screen').style.display='block';
+  document.getElementById('qq-chat-log').innerHTML='';
+  // Fade music back to daytime level
+  fadeMusic(0.25, 1500);
+  setTimeout(()=>{
+    STATE.day++;
+    updateHUD();
+    if(STATE.day>7 || STATE.keywords.length>=7){
+      // ENDING TRIGGER
+      checkEndings();
+    }
+    if(STATE.day>7){ STATE.day=7; }
+    const tl=document.getElementById('transition-screen'); tl.style.display='flex';
+    tl.innerHTML=`<div class="trans-time">0${6+Math.floor(Math.random()*3)}:${String(Math.floor(Math.random()*60)).padStart(2,'0')}</div><div>第${STATE.day}天</div><div class="trans-hint">阳光照进网吧。又是新的一天。</div>`;
+    setTimeout(()=>{ tl.style.display='none'; if(STATE.day<=7){ beginDay(); } },3000);
+  },600);
+}
+
+// ============================================================
+// SCENE SCRIPTS
+// ============================================================
+function playLines(lines,cb){ STATE._onQueueEnd=cb; lines.forEach(([s,t])=>addDialogue(s,t)); advanceDialogue(); }
+
+const SCENES = {
+
+// ============================================================
+// DAY 1 — 初到网吧
+// ============================================================
+'day1_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'环顾四周，观察网吧',scene:'day1_look_around'},
+    {text:'走向柜台，翻看账本',scene:'day1_counter'},
+    {text:'（目光停在那面停摆的钟上）',scene:'day1_clock'},
+  ]);};
+  addDialogue('旁白','2003年，初秋。');
+  addDialogue('旁白','你推开玻璃门。招牌上写着"星际网吧"——你舅舅起的名字。');
+  addDialogue('旁白','泡面味、淡淡的烟味、和CRT显示器的电流声一起扑面而来。日光灯发出低沉的嗡嗡声。');
+  addDialogue('旁白','几排旧电脑亮着微弱的蓝光。有人在角落打游戏，有人在窗边发呆。');
+  addDialogue('旁白','墙上的钟停在11:59。1999年12月31日。');
+  advanceDialogue();
+},
+'day1_clock':function(){
+  STATE._onQueueEnd=()=>{ showChoices([{text:'环顾网吧',scene:'day1_look_around'},{text:'走向柜台',scene:'day1_counter'}]); };
+  addDialogue('旁白','一面停摆的钟。秒针纹丝不动。');
+  addDialogue('旁白','你不太确定它是坏了——还是有人不想让它走到零点。');
+  advanceDialogue();
+},
+'day1_counter':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'翻看账本',scene:'day1_ledger'},{text:'检查泡面货架',scene:'day1_noodles'},
+    {text:'读员工守则',scene:'day1_rules'},{text:'回到大厅',scene:'day1_look_around'},
+  ]);};
+  addDialogue('旁白','老式木制收银台。收银机是机械款的，抽屉半开着——里面有些零钱。');
+  addDialogue('旁白','柜台上贴着一张泛黄的纸条，字迹潦草有力——是舅舅的笔迹：');
+  addDialogue('旁白','"星际网吧员工守则——1. 不得假装顾客。2. 泡面须在指定区域食用。3. 以上两条均不强制执行。"');
+  advanceDialogue();
+},
+'day1_ledger':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'回到大厅',scene:'day1_look_around'}]); };
+  addDialogue('旁白','账本很薄。收入将将够电费和网费。每月15号都有一笔"工资支出"：200元 × 9人。你从没见过这些员工。'); advanceDialogue(); },
+'day1_noodles':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'回到大厅',scene:'day1_look_around'}]); };
+  addDialogue('旁白','泡面货架整齐到不自然。红烧牛肉味在最左，鲜虾鱼板面在最右。架底压着一张旧纸条："石头——今天别忘了进货。——舅。"日期：2002年。舅舅去世前一个月。'); advanceDialogue(); },
+'day1_rules':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'回到柜台',scene:'day1_counter'}]); };
+  addDialogue('旁白','"不得假装顾客。"你读了两遍这一条。纸条下面压着另一张纸——更旧，更黄。开头写着"网吧气氛组招募"。下面的字看不太清了。'); advanceDialogue(); },
+'day1_look_around':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'和角落打CS的少年搭话（石头）',scene:'talk_shitou_first'},
+    {text:'和靠窗的中年男人聊聊（老李）',scene:'talk_laoli_first'},
+    {text:'先检查柜台',scene:'day1_counter'},
+  ]);};
+  addDialogue('旁白','大约二十台电脑。大部分关着。尘埃在窗边的光柱里慢慢飘。');
+  addDialogue('旁白','最角落的电脑前坐着个少年。枪声从他的耳机边缘漏出来——那是整个网吧除了日光灯之外唯一的声音。');
+  addDialogue('旁白','另一个人靠窗坐着，对着一个空白的Word文档。屏幕上的光标一明一灭。');
+  advanceDialogue();
+},
+'day1_afternoon':function(){
+  STATE._onQueueEnd=()=>{ const o=[];
+    o.push({text:'和服装店女老板聊聊（阿芳）',scene:'talk_afang_first'});
+    o.push({text:'和写论文的大学生聊聊（小林）',scene:'talk_xiaolin_first'});
+    if(!STATE.flags.met_laoli) o.push({text:'和靠窗的中年男人聊聊（老李）',scene:'talk_laoli_first'});
+    o.push({text:'（深夜打烊）',action:transitionToNight});
+    showChoices(o);
+  };
+  addDialogue('旁白','下午。网吧里的顾客多了几个。');
+  addDialogue('旁白','一个大学生模样的年轻人走进来，打开Word文档。一个穿着有些过时的女人从隔壁服装店方向进来。角落里的CS少年换了一局。');
+  advanceDialogue();
+},
+
+// ============================================================
+// DAY 2 — 更多面孔
+// ============================================================
+'day2_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'和门口安静的老太太聊聊天（梅姨）',scene:'talk_meiyi_first'},
+    {text:'去角落看看那个总是在睡觉的年轻人（阿杰）',scene:'talk_ajie_first'},
+    {text:'先开电脑，准备一天的营业',scene:'day2_counter'},
+  ]);};
+  addDialogue('旁白','第二天。你来得比昨天早。推开门的时候——门口的椅子上已经坐着一个人。');
+  addDialogue('旁白','一个头发花白的女人。安静地坐在最靠近门口的位子。她的电脑甚至没有开机。');
+  addDialogue('旁白','最角落的阴影里还有一个年轻人。昨晚打烊的时候他就在那儿。今早还在。他一直在睡觉——或者假装在睡觉。');
+  advanceDialogue();
+},
+'day2_counter':function(){
+  STATE._onQueueEnd=()=>{ showChoices([{text:'回到大厅',scene:'day2_morning'}]); };
+  addDialogue('旁白','你打开收银机。里面的零钱和昨天一模一样。泡面也还是原来的排序。');
+  addDialogue('旁白','但你注意到一件事——昨天放在柜台上的那支圆珠笔，被人移动过。现在它正好摆在员工守则的第三条下面。');
+  addDialogue('旁白','第三条是："以上两条均不强制执行。"');
+  advanceDialogue();
+},
+'day2_afternoon':function(){
+  STATE._onQueueEnd=()=>{ const o=[];
+    if(!STATE.flags.met_chen) o.push({text:'和角落里扫雷的中年男人聊聊（陈警官）',scene:'talk_chen_first'});
+    if(!STATE.flags.met_wangshu) o.push({text:'和那个对鼠标束手无策的老人聊聊（王叔）',scene:'talk_wangshu_first'});
+    if(!STATE.flags.met_xiaozhou) o.push({text:'和那个安静的年轻女孩聊聊（小周）',scene:'talk_xiaozhou_first'});
+    o.push({text:'（深夜打烊）',action:transitionToNight});
+    showChoices(o);
+  };
+  addDialogue('旁白','下午。网吧迎来了更多的熟面孔。');
+  addDialogue('旁白','一个穿着便衣的男人走进来，径直走到最边上的电脑前坐下。他说他是来"巡逻"的——但他打开的是扫雷。');
+  addDialogue('旁白','一个戴老花镜的老人推开门。他站在门口愣了一下，像是第一次来——但每个常客都认识他。');
+  advanceDialogue();
+},
+
+// ============================================================
+// DAY 3 — 裂缝
+// ============================================================
+'day3_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'去问石头关于1999年的事',scene:'talk_shitou_day3'},
+    {text:'翻看柜台抽屉里的旧物',scene:'day3_drawer'},
+    {text:'照常营业',scene:'day3_normal'},
+  ]);};
+  addDialogue('旁白','第三天。你开始觉得——这些顾客之间有一种你不理解的默契。');
+  addDialogue('旁白','石头昨天说了一句话："你去问梅姨。"今天你注意到——石头和梅姨从来没有同时看向同一个方向。');
+  advanceDialogue();
+},
+'day3_drawer':function(){
+  STATE._onQueueEnd=()=>{ showChoices([{text:'回到大厅',scene:'day3_morning'}]); };
+  addDialogue('旁白','柜台下面有一个上锁的抽屉。钥匙在收银机下面的凹槽里。');
+  addDialogue('旁白','抽屉里有一沓旧照片。最上面一张：九个年轻一点的面孔站在网吧门口。背景里"星际网吧"的招牌是新的。');
+  addDialogue('旁白','照片背后有一行字——"1999年11月。开业第一天。"舅舅的字迹。');
+  addDialogue('旁白','你逐一辨认那些面孔：老李、小林、阿芳、王叔、小周、陈警官、石头、梅姨。还有一个——你没见过的人。站在最左边，半侧着脸，看不清。');
+  addDialogue('旁白','你翻开下一张。日期是1999年12月31日。照片里——所有人围着一台电脑。屏幕上是跨年倒计时。钟上显示11:58。');
+  addDialogue('旁白','没有11:59之后的照片了。');
+  advanceDialogue();
+},
+'day3_normal':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'（深夜打烊）',action:transitionToNight}]); }; addDialogue('旁白','你决定今天照常营业。但当你给老李送泡面的时候——你注意到他今天没在打字。他只是对着那个空白的Word文档，双手放在键盘上，一动不动。'); advanceDialogue(); },
+'day3_afternoon':function(){
+  STATE._onQueueEnd=()=>{ const o=[];
+    o.push({text:'和梅姨谈谈那张照片',scene:'talk_meiyi_day3'});
+    o.push({text:'仔细观察阿杰',scene:'talk_ajie_day3'});
+    o.push({text:'（深夜打烊）',action:transitionToNight});
+    showChoices(o);
+  };
+  addDialogue('旁白','下午。阳光从窗户照进来，在地上的同一个位置落了一小片光亮。你注意到阿杰睁开了眼睛——他在看着你。那种目光不像是在观察一个人。更像是在等一个人说出某句话。');
+  advanceDialogue();
+},
+'talk_shitou_day3':function(){ playLines([['石头','你又来了。'],['你','我想问问——1999年的事。'],['石头','（枪声停了。他摘下耳机。）'],['石头','那年除夕。大家都在。你舅舅也在。'],['石头','然后就没了。'],['石头','不是人没了。是——那天以后的所有照片，都没有11:59以后的了。']],()=>{ showChoices([{text:'……什么意思？',scene:'day3_morning'},{text:'（沉默）',scene:'day3_morning',keyword:'1999_12_31'}]); }); },
+'talk_meiyi_day3':function(){ playLines([['梅姨','你翻过抽屉了。'],['梅姨','（她甚至没有看你。）'],['梅姨','那张照片上的人——你认出来了吗。'],['梅姨','最左边那个。不是顾客。不是你舅舅。'],['梅姨','他是这间网吧的第一任老板。']],()=>{ showChoices([{text:'第一任？',keyword:'fourth_person'},{text:'（不知道该说什么）',scene:'day3_morning'}]); }); },
+'talk_ajie_day3':function(){ playLines([['阿杰','你看了照片。'],['阿杰','（眼睛全睁开了。这是你第一次看到他完全没在睡觉。）'],['阿杰','照片上那个人。那个站在左边的人。'],['阿杰','我见过他。1999年。我还很小。他后来不见了。你舅舅接手了这里。'],['阿杰','你舅舅也不见了。现在是你。'],['阿杰','……你明白我想说什么吗。']],()=>{ showChoices([{text:'……第四个。是我。',keyword:'stand_in'},{text:'我不想明白。',scene:'day3_morning'}]); }); },
+
+// ============================================================
+// DAY 4 — 深谈
+// ============================================================
+'day4_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'和什么人深谈（随机）',scene:'day4_choose_deep'},
+    {text:'检查防火柜',scene:'day4_safe'},
+    {text:'照常营业',scene:'day4_normal'},
+  ]);};
+  addDialogue('旁白','第四天。你已经能叫出每个人的名字了。但他们看你的眼神在变——从"新老板"变成了"可能知道真相的人"。');
+  advanceDialogue();
+},
+'day4_normal':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'（深夜打烊）',action:transitionToNight}]); }; addDialogue('旁白','今天一切正常。除了王叔——他今天没有问任何人"鼠标怎么用"。他安静地上了一下午的网。你经过他身后时看到他打开的网页是——1999年火灾新闻的存档页面。他迅速关掉了。'); advanceDialogue(); },
+'day4_safe':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'回到大厅',scene:'day4_morning'}]); };
+  addDialogue('旁白','柜台后面有一个旧的防火保险柜。锁着。你试了舅舅的生日——不对。试了网吧开业的日期1999年11月——咔。开了。');
+  addDialogue('旁白','里面有一个VHS录像带。标签上写着："1999.12.31 —— 除夕。"');
+  addDialogue('旁白','还有一沓合同。写在香烟包装纸的背面。抬头："网吧气氛组雇佣协议"。下面有9个签名。');
+  addDialogue('旁白','合同最下面一行小字："聘期永久。自动续约。终止须经甲方亲笔签名。"甲方签名那一栏——是空的。');
+  addDialogue('旁白','你翻到最后一页。舅舅的笔迹："这些人都是好人。给他们一个待的地方。 ——1999年11月"');
+  advanceDialogue(); },
+'day4_choose_deep':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'和老李聊聊那个Word文档',scene:'talk_laoli_deep'},
+    {text:'问问小林论文的真正内容',scene:'talk_xiaolin_deep'},
+    {text:'听阿芳讲她在等谁',scene:'talk_afang_deep'},
+  ]);};
+  addDialogue('旁白','你想和谁聊聊心里话？'); advanceDialogue();
+},
+'day4_afternoon':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'（深夜打烊）',action:transitionToNight},
+  ]);};
+  addDialogue('旁白','下午。陈警官今天没有玩扫雷。他在写报告——你经过时瞥见标题："关于星际网吧1999年12月31日火灾事故的调查报告"。');
+  addDialogue('旁白','他合上了文件夹。对你说："快了。快写完了。"');
+  advanceDialogue();
+},
+
+// ============================================================
+// DAY 5 — 裂痕
+// ============================================================
+'day5_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'正常营业',scene:'day5_normal'},
+    {text:'（准备晚上的对话）',action:transitionToNight},
+  ]);};
+  addDialogue('旁白','第五天。你注意到今天来的人少了几个。王叔不在。小周不在。');
+  addDialogue('旁白','梅姨说："别担心。他们有时候不来。但他们会回来的。他们总是回来。"');
+  addDialogue('旁白','你问她为什么。"因为除了这里——他们没有别的地方可以去了。"');
+  advanceDialogue();
+},
+'day5_normal':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'（深夜打烊）',action:transitionToNight}]); };
+  addDialogue('旁白','今天很安静。阿芳的服装店橱窗换了一个新姿势——模特的手从垂着变成了微微抬起。像是想抓住什么。');
+  addDialogue('旁白','小林今天把论文标题改了：《关于无固定期限劳动合同的法律效力研究》。你问他为什么改题目。他说："随便改的。"');
+  advanceDialogue(); },
+'day5_afternoon':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'去问阿杰关于"第四任"的事',scene:'talk_ajie_deep'},
+    {text:'和梅姨聊聊舅舅',scene:'talk_meiyi_deep'},
+    {text:'（深夜打烊）',action:transitionToNight},
+  ]);};
+  addDialogue('旁白','下午的阳光变得很斜。阿杰今天在角落醒着——他面前放着一碗泡面。红烧牛肉味的。冒着热气。但他一口没吃。');
+  advanceDialogue();
+},
+
+// ============================================================
+// DAY 6 — 逼近真相
+// ============================================================
+'day6_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'把所有线索串起来',action:()=>{ toggleKeywordBoard(); setTimeout(()=>{ toggleKeywordBoard(); showChoices([{text:'继续',scene:'day6_normal'}]); },500); }},
+    {text:'照常营业',scene:'day6_normal'},
+  ]);};
+  addDialogue('旁白','第六天。你几乎已经习惯了这里。习惯了泡面的味道、日光灯的嗡嗡声、和CRT屏幕的蓝光。');
+  addDialogue('旁白','但你也有一种感觉——有些事即将结束。存折余额不多了。合同上的自动转账还能撑多久？');
+  addDialogue('旁白','今天——你注意到那面钟。11:59。但你确定昨天它好像动过一下。');
+  advanceDialogue();
+},
+'day6_normal':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'（深夜打烊）',action:transitionToNight}]); };
+  addDialogue('旁白','今天所有人都在。连王叔和小周也回来了。你注意到老李今天打了一行字——他第一次没有删掉。');
+  addDialogue('旁白','那行字是：\n"见字如面。"\n收件人那里——他写了一个名字。你看不清。');
+  advanceDialogue(); },
+'day6_afternoon':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'（深夜打烊）',action:transitionToNight},
+  ]);};
+  addDialogue('旁白','陈警官今天没有来。阿芳的橱窗模特换了一身新衣服——2003年的款式。这是四年来第一次。');
+  addDialogue('旁白','石头打了最后一局CS。他输了。但他笑了——"打不过对面。对面那人，以前每天和我打。他叫阿杰。阿杰现在不打了。"');
+  advanceDialogue();
+},
+
+// ============================================================
+// DAY 7 — 抉择
+// ============================================================
+'day7_morning':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'查看防火柜里的录像带',scene:'day7_videotape'},
+    {text:'和所有人道别（？）',scene:'day7_goodbye'},
+    {text:'照常营业——像什么都没发生一样',scene:'day7_normal'},
+  ]);};
+  addDialogue('旁白','第七天。你站在网吧门口，看着招牌上的"星际网吧"四个字。油漆有点掉落了。但舅舅的笔迹还很清楚。');
+  addDialogue('旁白','你知道了很多事。气氛组合同。1999年的火灾。那个永远停在11:59的钟。');
+  addDialogue('旁白','但还有一个问题——那个在QQ上每夜和你聊天的人。TA到底是谁。');
+  addDialogue('旁白','你决定做最后的探索。');
+  advanceDialogue();
+},
+'day7_videotape':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'继续探索',scene:'day7_goodbye'},
+  ]);};
+  addDialogue('旁白','你找到了一台还能播放VHS的老式录像机。把它接到一台CRT显示器上。');
+  addDialogue('旁白','画面开始播放。1999年除夕夜。舅舅举着摄像机。');
+  addDialogue('旁白','画面里的人在笑、在聊天、在看屏幕上的跨年倒计时。窗外有烟花。');
+  addDialogue('旁白','倒计时：10 — 9 — 8 — 7 — 6 — 5 — 4 — 3 — 2 — ');
+  addDialogue('旁白','画面中断。雪花。然后是黑暗。');
+  addDialogue('旁白','最后几秒——摄像机被放下了，但还在录。画面里是一扇窗户——窗户外是2000年第一朵烟花的光芒。然后是火光。然后是——什么也没有了。');
+  addDialogue('旁白','录像带结束了。你取下它的时候发现——带子的标签背面还有字：');
+  addDialogue('旁白','"如果你在看这个——说明你找到它了。他们是很好的人。别让他们走。 ——舅舅"');
+  advanceDialogue();
+},
+'day7_goodbye':function(){
+  STATE._onQueueEnd=()=>{ showChoices([
+    {text:'（准备今晚最后的QQ对话）',action:transitionToNight},
+  ]);};
+  addDialogue('旁白','你走向每一个人的电脑前。没有说再见——只是经过。');
+  addDialogue('旁白','石头抬头看了你一眼。阿芳说"还行。"老李的Word文档上多了一行字。小林论文的标题变成了"终稿"。小周关掉了她的Excel——那个记录了四年积蓄的表格。');
+  addDialogue('旁白','王叔说："鼠标——其实我1995年就会用了。"');
+  addDialogue('旁白','梅姨什么都没说。但她站起来，走到柜台后面，用抹布擦了擦员工守则上的灰。');
+  addDialogue('旁白','阿杰——第一次——对你说了超过两个字："今晚。QQ上。有个人想跟你说句话。"');
+  advanceDialogue();
+},
+'day7_normal':function(){ STATE._onQueueEnd=()=>{ showChoices([{text:'（深夜打烊）',action:transitionToNight}]); };
+  addDialogue('旁白','你决定像什么都没发生一样。打开收银机、摆好泡面、给石头的那台电脑开了机。');
+  addDialogue('旁白','今天——那面钟。它好像在某个瞬间——走了。一秒。然后又停了。');
+  addDialogue('旁白','或者你看错了。'); advanceDialogue();
+},
+'day7_afternoon':function(){
+  STATE._onQueueEnd=()=>{ showChoices([{text:'（最后一个深夜）',action:transitionToNight}]); };
+  addDialogue('旁白','下午。阳光从窗户斜进来。灰尘在光柱里安静地飘。所有人都在。泡面冒着热气。键盘轻轻地响。');
+  addDialogue('旁白','这就像1999年的某一天。或者2003年的某一天。或者——每一天。');
+  advanceDialogue();
+},
+
+// ============================================================
+// CHARACTER DIALOGUES — 石头
+// ============================================================
+'talk_shitou_first':function(){ STATE.flags.met_shitou=true;
+  playLines([['你','打得不错。'],['石头','……嗯。（没转头。）'],['你','你经常来？'],['石头','每天都来。快四年了。'],['石头','（被爆头。放下鼠标——看了你一眼。那眼神不像十六岁。）'],['你','我是新来的——'],['石头','（打断）我知道。舅舅说过了。']],()=>{
+    showChoices([{text:'他……是什么样的人？',scene:'talk_shitou_about_uncle'},{text:'你先打。我到处看看。',scene:'day1_afternoon'}]); }); },
+'talk_shitou_about_uncle':function(){ playLines([['石头','他对谁都好。对我尤其。'],['石头','他说过——"网吧里总得有人在。"'],['石头','所以我在。从1999年到现在。'],['你','那时你多大？'],['石头','十二。'],['石头','你去问梅姨。她什么都知道。但不会说的。']],()=>{ showChoices([{text:'……谢谢。',scene:'day1_afternoon'}]); }); },
+'talk_shitou_normal':function(){ addDialogue('石头','今天网速不错。CS打了十五局，赢了十二局。你呢——网吧开着还行吗。'); advanceDialogue(); },
+'talk_shitou_deep':function(){ playLines([['石头','舅舅死的那天。网吧里只有我。'],['石头','他说——"继续打你的游戏。"'],['石头','然后他走了。我就继续打了。到现在。'],['石头','（放下鼠标。屏幕上是游戏大厅——没有在打。）'],['石头','……有时候我觉得。只要我在打CS。这间网吧就没变。'],['石头','只要网吧没变——他们就还在。']],()=>{ showChoices([{text:'（沉默。然后点头。）',scene:'day4_morning'}]); }); },
+'talk_shitou_repeat':function(){ addDialogue('石头','（对着屏幕。枪声密集。）'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 老李
+// ============================================================
+'talk_laoli_first':function(){ STATE.flags.met_laoli=true;
+  playLines([['你','您好——'],['老李','（迅速Alt+Tab——Word切到扫雷。）'],['老李','啊。你好。新老板？'],['你','对。我舅舅的网吧归我了。'],['老李','这样。（点了一下扫雷。踩中地雷。炸开。）'],['老李','我是来学打字的。下岗了嘛。再就业。学学电脑。'],['你','（扫雷后面——Word文档上一页密密麻麻的字。收件人是空的。）']],()=>{ showChoices([{text:'有需要随时找我。',scene:'day1_afternoon'},{text:'你在这家网吧多久了？',scene:'talk_laoli_about'}]); }); },
+'talk_laoli_about':function(){ playLines([['老李','多久了……（他把扫雷最小化。蓝天白云桌面亮出来。）'],['老李','1999年。11月。天很冷。'],['老李','你舅舅在柜台后面煮泡面。他问我："来一碗吗？不要钱。"'],['老李','我说不饿。'],['老李','他还是给我泡了一碗。红烧牛肉的。']],()=>{ showChoices([{text:'（安静地听）',scene:'day1_afternoon'}]); }); },
+'talk_laoli_normal':function(){ addDialogue('老李','打字这件事——练了二十年，还是打不快。不过那也无所谓。反正我不赶时间。'); advanceDialogue(); },
+'talk_laoli_deep':function(){ playLines([['老李','那个Word文档。你看到了吧。'],['老李','写了一封信。二十年。没寄出过。'],['你','写给谁？'],['老李','（沉默了很久。扫雷的地雷又炸了一个。）'],['老李','写给我女儿。她1999年出嫁。嫁去了别的城市。'],['老李','我没去送她。那天我在这间网吧里。和一群刚认识的人一起跨年。'],['老李','……后来我再也没见过她。她每年给我写信。我每年在这里回信。但从来没寄出去过。'],['老李','Word文档——是我存信的草稿箱。二十年了。五十二封信。都在里面。']],()=>{ showChoices([{text:'也许今年——可以寄出去。',scene:'day4_morning'},{text:'（沉默。给他倒了一杯水。）',scene:'day4_morning'}]); }); },
+'talk_laoli_repeat':function(){ addDialogue('老李','（Word文档的光标闪了一下。今天他写了三个字。没有删。）'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 阿芳
+// ============================================================
+'talk_afang_first':function(){ STATE.flags.met_afang=true;
+  playLines([['你','你好——'],['阿芳','新老板。'],['阿芳','（没转头。屏幕上的服装批发网页很久没滚动过。）'],['阿芳','我叫阿芳。隔壁开服装店的。午休时间来坐坐。'],['你','生意怎么样？'],['阿芳','还行。'],['阿芳','（"还行"这两个字说得非常匀速——像回答了几千遍。）'],['阿芳','你舅舅以前也天天问。我说还行。他说那就好。重复了大概一千遍。']],()=>{ showChoices([{text:'他是什么样的人？',scene:'talk_afang_about_uncle'},{text:'你继续忙。',scene:'day1_afternoon'}]); }); },
+'talk_afang_about_uncle':function(){ playLines([['阿芳','什么样的人……（关掉网页。桌面只剩蓝天绿草地。）'],['阿芳','他是那种让你觉得"待在这里也行"的人。'],['阿芳','不催你走。不问你来做什么。'],['阿芳','他死后——这里还是那样。']],()=>{ showChoices([{text:'（安静地走开）',scene:'day1_afternoon'}]); }); },
+'talk_afang_normal':function(){ addDialogue('阿芳','还行。（然后她加了一句——第一次的补充）今天天气比昨天冷了一点。'); advanceDialogue(); },
+'talk_afang_deep':function(){ playLines([['阿芳','橱窗的衣服从来不换。因为我在等一个人。'],['阿芳','他说会来找我。我说我开一家服装店——这样就算他找不到路，也能看到橱窗。'],['你','他……什么时候说的？'],['阿芳','1999年。他在去火车站的路上。说那边安顿好就回来。'],['阿芳','（她关掉了批发网页。桌面上只有一个未命名的文件夹。里面是1999年来所有的火车时刻表。到站——本市的。每天一班。二十年。没有一天到站记录里有他的名字。）'],['阿芳','也许他不回来了。但橱窗换了——他就真的找不到了。']],()=>{ showChoices([{text:'（给她泡了一碗红烧牛肉面。）',scene:'day4_morning'},{text:'（不知道该说什么。沉默。）',scene:'day4_morning'}]); }); },
+'talk_afang_repeat':function(){ addDialogue('阿芳','还行。（橱窗里的模特今天换了一个姿势。）'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 小林
+// ============================================================
+'talk_xiaolin_first':function(){ STATE.flags.met_xiaolin=true;
+  playLines([['你','在写论文？'],['小林','（推眼镜）对。大三了。《浅析市场经济》。'],['你','哪个学校？'],['小林','……本市的。'],['小林','（低头。敲键盘非常慢。一个字一个字地打。不太确定下一个字该敲什么。）'],['小林','你是新老板？你舅舅以前常帮我看论文。他说写得不错。'],['小林','（笑得很勉强。到不了眼睛。）']],()=>{ showChoices([{text:'有需要随时说。',scene:'day1_afternoon'},{text:'认识我舅舅很久了？',scene:'talk_xiaolin_about_uncle'}]); }); },
+'talk_xiaolin_about_uncle':function(){ playLines([['小林','1999年。第一天开门我就来了。'],['小林','那天很冷。他在柜台煮泡面。问我要不要来一碗。我说不饿。'],['小林','他还是给我泡了。'],['小林','（敲了两个字。又删掉。）'],['小林','……他没跟你提过我吧。']],()=>{ showChoices([{text:'……提到过。"（说谎）',scene:'day1_afternoon'},{text:'……没有。',scene:'day1_afternoon'}]); }); },
+'talk_xiaolin_normal':function(){ addDialogue('小林','论文今天有点进展。改了个标题。不过内容——二十年来好像还是那几段。'); advanceDialogue(); },
+'talk_xiaolin_deep':function(){ playLines([['小林','我不是大学生。1999年高考就没考上。'],['小林','但我需要一个地方去。网吧比任何教室都更像教室——这里有固定座位、固定同学、每天来的时候有人跟你打招呼。'],['你','你家里人知道吗？'],['小林','……他们以为我在读研。已经"读到"博三了。'],['小林','（他笑了一下。这次笑到了眼睛里——带着自嘲。）'],['小林','你知道吗。二十年来，我每天来的路上都会经过一所大学。我从来没走进去过。但网吧——每次推开门的时候，我觉得自己真的在上学。']],()=>{ showChoices([{text:'这里就是学校。',scene:'day4_morning'},{text:'……那篇论文。你打算写完吗？',scene:'day4_morning'}]); }); },
+'talk_xiaolin_repeat':function(){ addDialogue('小林','（论文标题又改了。）今天叫"终稿"。但我估计明天还会改。'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 梅姨
+// ============================================================
+'talk_meiyi_first':function(){ STATE.flags.met_meiyi=true; playLines([['梅姨','你来了。'],['梅姨','（那双眼睛很安静——像早就知道你会出现。）'],['梅姨','你舅舅是好人。你慢慢会知道的。']],()=>{ showChoices([{text:'（点头）',scene:'day2_morning'}]); }); },
+'talk_meiyi_normal':function(){ addDialogue('梅姨','（安静地坐在门口。看着街上的行人。她每天看。看了二十年。）'); advanceDialogue(); },
+'talk_meiyi_deep':function(){ playLines([['梅姨','1999年除夕夜。这间网吧里发生了火灾。'],['梅姨','没人出来。除了你舅舅。'],['梅姨','他重新装修了这里。换了地板、换了桌椅、换了显示器。'],['梅姨','但有些东西——不是装修能改变的。'],['梅姨','那些人还在——他们以你感知得到或感知不到的方式，继续在这里。'],['梅姨','（她看着你。那双眼睛里没有恐惧——只有一种很古老的平静。）'],['你','你也是其中之一吗？'],['梅姨','（她没有回答。她只是站起来，走到门口。推开门——门外是街道。阳光。行人。她站在门框里。一半在里，一半在外。）'],['梅姨','……我不知道。']],()=>{ showChoices([{text:'（震撼。沉默了很久。）',scene:'day5_morning',keyword:'fire'}]); }); },
+'talk_meiyi_repeat':function(){ addDialogue('梅姨','（安静地坐在门口。）'); addDialogue('梅姨','……今天天气不错。'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 王叔
+// ============================================================
+'talk_wangshu_first':function(){ STATE.flags.met_wangshu=true; playLines([['王叔','你好。我是来学上网的。'],['王叔','（推老花镜。手在鼠标垫上摸索了一下。）'],['王叔','这个鼠标——怎么打开IE……']],()=>{ showChoices([{text:'帮他双击蓝色e图标',scene:'day2_afternoon'},{text:'左键双击那个蓝色的e。',scene:'day2_afternoon'}]); }); },
+'talk_wangshu_normal':function(){ addDialogue('王叔','鼠标总是找不到。不过——（他凑近了一点）其实我家里也有一台电脑。联想笔记本。我不太确定为什么要来这里学。但来都来了。'); advanceDialogue(); },
+'talk_wangshu_deep':function(){ playLines([['王叔','我教了三十年高中物理。退休那天——我发现我不认识任何一条街。'],['王叔','三十年来我除了学校和家，没有去过第三个地方。'],['王叔','（他推了推老花镜。手掌在鼠标垫上很熟悉地找到鼠标——右键——菜单——属性。动作一气呵成。）'],['王叔','其实我会用电脑。1995年学校配了第一批联想。班里就我一个人会装Windows。'],['你','那你为什么每天问鼠标怎么用？'],['王叔','（沉默。然后笑了——那是一个退休老人最诚恳的笑。）'],['王叔','因为如果我说我会。他们就不会跟我说话了。我是新来的嘛。总要有个理由让人理你。']],()=>{ showChoices([{text:'（笑出声。然后突然想哭。）',scene:'day2_afternoon'},{text:'这里永远欢迎你。不管会不会用鼠标。',scene:'day2_afternoon'}]); }); },
+'talk_wangshu_repeat':function(){ addDialogue('王叔','（今天没有问鼠标的问题。他在看新闻。新浪的。）'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 小周
+// ============================================================
+'talk_xiaozhou_first':function(){ STATE.flags.met_xiaozhou=true; playLines([['小周','……你好。'],['小周','（声音很轻。怕吵到别人。）'],['小周','下班了。网吧是我唯一能待久一点的地方。']],()=>{ showChoices([{text:'随时都欢迎。',scene:'day2_afternoon'}]); }); },
+'talk_xiaozhou_normal':function(){ addDialogue('小周','（她今天戴了一个新的发绳。淡蓝色的。）她说："好看吗。路边摊买的。两块钱。"'); advanceDialogue(); },
+'talk_xiaozhou_deep':function(){ playLines([['小周','（她关掉了屏幕上的Excel——但你已经看到了。一个叫"目标"的表格。）'],['小周','十七岁从湖南坐绿皮火车来。第一份工是发廊洗发小妹。'],['小周','那时我想——攒够了开店的钱就回老家。'],['小周','（她重新打开Excel。表格里有数字。一次存够了。又一次。又一次。每次快要达到目标——就会有什么事发生。妈妈生病。弟弟上学。房租涨价。）'],['你','现在呢？你还想回去吗？'],['小周','（她想了很久。长到屏幕保护程序自己跳了出来。蓝天白云绿草地。）'],['小周','……我不知道。习惯了这里。好像每天来网吧坐一会儿——比回老家更像"回家"。']],()=>{ showChoices([{text:'那就留下。',scene:'day2_afternoon'},{text:'（把今天账上的零钱塞到她的Excel表格下面。）',scene:'day2_afternoon'}]); }); },
+'talk_xiaozhou_repeat':function(){ addDialogue('小周','你好。今天也——还行。'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 陈警官
+// ============================================================
+'talk_chen_first':function(){ STATE.flags.met_chen=true; playLines([['陈警官','巡逻。'],['陈警官','（他在玩扫雷。一个地雷没踩。）']],()=>{ showChoices([{text:'（不打扰他）',scene:'day2_afternoon'}]); }); },
+'talk_chen_normal':function(){ addDialogue('陈警官','（扫雷界面。高级难度。全部翻开——只剩最后一面旗。）他自言自语："二十年了。终于要扫完了。"'); advanceDialogue(); },
+'talk_chen_deep':function(){ playLines([['陈警官','我在写一份调查报告。关于1999年除夕夜的火灾。'],['陈警官','（他关掉了扫雷——第一次。打开了一个Word文档。标题："星际网吧火灾调查报告 — 初稿 — 待补充"）'],['陈警官','写了五年了。没写完。因为每一次写到"事故原因"这一栏——我就停下来。'],['你','为什么？'],['陈警官','因为如果报告写完——这个案就结了。这个案子结了——我就没有理由每天都来了。'],['陈警官','（他又打开了扫雷。）'],['陈警官','你舅舅生前找过我。他说：陈警官——这个报告，不急着写完。我说好。')],()=>{ showChoices([{text:'那你打算什么时候写完？',scene:'day2_afternoon'},{text:'（沉默。给他倒了一杯茶。）',scene:'day2_afternoon'}]); }); },
+'talk_chen_repeat':function(){ addDialogue('陈警官','（扫雷。这次——他踩了一个地雷。）他说："没关系。重来一局。"'); advanceDialogue(); },
+
+// ============================================================
+// CHARACTER DIALOGUES — 阿杰
+// ============================================================
+'talk_ajie_first':function(){ STATE.flags.met_ajie=true; playLines([['阿杰','……'],['阿杰','（看了你一眼。闭上。像你只是背景里的一个像素。）']],()=>{ showChoices([{text:'（不打扰他）',scene:'day2_morning'}]); }); },
+'talk_ajie_normal':function(){ const lines=[['阿杰','……']]; if(STATE.keywords.length>=5){ lines.push(['阿杰','快了。',]); } addDialogue(lines[0][0],lines[0][1]); if(lines[1]) addDialogue(lines[1][0],lines[1][1]); advanceDialogue(); },
+'talk_ajie_deep':function(){ playLines([['阿杰','你知道了气氛组的事。'],['阿杰','你也知道那面钟的事了。'],['阿杰','但你还不知道——谁在QQ上和你聊天。'],['阿杰','我可以告诉你。但你应该先问自己一个问题——'],['阿杰','如果TA就是你觉得的那个人——然后呢。'],['阿杰','你认出了TA。TA就可以走了。他们——就可以走了。'],['阿杰','（他看着你。眼睛完全睁着。清醒得让人不舒服。）'],['阿杰','你想让他们走吗。']],()=>{ showChoices([{text:'……我不知道。',scene:'day5_morning'},{text:'他们应该走了。',scene:'day5_morning'},{text:'我还没准备好。',scene:'day5_morning'}]); }); },
+'talk_ajie_repeat':function(){ addDialogue('阿杰','（在角落。安静地等着什么。或者什么都不等。）'); advanceDialogue(); },
+};
+
+// ============================================================
+// QQ CONVERSATIONS
+// ============================================================
+const QQ_CONVOS = {
+'qq_day1':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'网吧里来了新人。'},
+  {sender:'stranger',text:'是你吧。新老板。', choices:[{text:'你怎么知道？'},{text:'你是常客？',flag:'qq_asked_regular'},{text:'……你是谁？',flag:'qq_asked_who'}]},
+  {sender:'stranger',text:'我知道很多事。也知道你不知道的事。(￣▽￣)~*'},
+  {sender:'stranger',text:'今天见了谁？', choices:[{text:'一个打CS的少年。石头。',flag:'qq_mentioned_shitou'},{text:'一个大三学生。写论文。',flag:'qq_mentioned_xiaolin'},{text:'一个服装店老板。阿芳。',flag:'qq_mentioned_afang'}]},
+  {sender:'stranger',text:'嗯。都很好。他们在这里很久了。'},
+  {sender:'stranger',text:'这间网吧有个秘密。', choices:[{text:'什么秘密？'},{text:'我不确定我想知道。'}]},
+  {sender:'stranger',text:'再待几天吧。不急。晚安。(｡•́︿•̀｡)'},
+],
+'qq_day2':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'今天有新的发现吗？', choices:[{text:'有个老太太。坐在门口。她电脑没开。'},{text:'角落有个一直在睡觉的人。'},{text:'跟昨天差不多。'}]},
+  {sender:'stranger',text:'梅姨。阿杰。'},
+  {sender:'stranger',text:'梅姨是这间网吧里知道一切的人。阿杰是等一切结束的人。'},
+  {sender:'stranger',text:'你觉得——如果一个人在一个地方待了太久，他还是同一个人吗？'},
+  {sender:'stranger',text:'晚安。明天继续开店吧。'},
+],
+'qq_day3':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'你今天翻了抽屉。'},
+  {sender:'stranger',text:'（你怎么知道？——你没有问出口。）'},
+  {sender:'stranger',text:'那张照片——站在最左边的那个人。你注意到他了吗。'},
+  {sender:'stranger',text:'他是第一任。你舅舅是第二任。你是第三任。'},
+  {sender:'stranger',text:'你问我——第四任是谁？(◕‿◕✿)', choices:[{text:'谁？',keyword:'fourth_person'},{text:'……我不知道。'},{text:'我不想知道了。'}]},
+  {sender:'stranger',text:'再等等。不急。'},
+],
+'qq_day4':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'你今天找到了防火柜。'},
+  {sender:'stranger',text:'九份合同。一支笔。一盘录像带。你舅舅的字迹。'},
+  {sender:'stranger',text:'气氛组。这个名字是他想的。他说——网吧不能冷清。冷清的网吧没人来。'},
+  {sender:'stranger',text:'但他不知道——那些人来了以后，就不想走了。他也——就舍不得赶他们走。'},
+  {sender:'stranger',text:'你知道为什么自动转账还没停吗。因为你舅舅死前把一个存折里的钱全转进了那个账户。够发三年零四个月的工资。', keyword:'contract'},
+  {sender:'stranger',text:'三年零四个月以后——就到今天了。'},
+  {sender:'stranger',text:'晚安。(´；ω；`)'},
+],
+'qq_day5':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'陈警官的报告。写了五年。'},
+  {sender:'stranger',text:'你问他什么时候写完——他说不急着写完。其实他早就写完了。'},
+  {sender:'stranger',text:'事故原因"那一栏写着："电线老化。短路。无责方。'},
+  {sender:'stranger',text:'但他没有签字。因为签了字——这间网吧的档案就要归档了。归档了——就没有理由每天都来了。'},
+  {sender:'stranger',text:'大家都需要一个理由。哪怕是假的。'},
+  {sender:'stranger',text:'你的理由是什么？', choices:[{text:'我也不知道。'},{text:'我舅舅把这间网吧交给我。我想知道他为什么要留着它。'},{text:'也许跟他们一样——我也没有别的地方可以去了。'}]},
+],
+'qq_day6':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'今天你把线索都串起来了。'},
+  {sender:'stranger',text:'1999年除夕。火灾。九个人。一面停了的钟。'},
+  {sender:'stranger',text:'但有一个问题你还没问。'},
+  {sender:'stranger',text:'——我到底是谁。', choices:[{text:'你是谁？',keyword:'not_me'},{text:'我不需要知道。'},{text:'你是老李？小林？阿芳？……',flag:'qq_guessed_all'}]},
+  {sender:'stranger',text:'（对方沉默了。很久。久到你以为TA下线了。）'},
+  {sender:'stranger',text:'……是啊。我到底是谁呢。'},
+  {sender:'stranger',text:'（QQ消息提示音。但不是你的。你听到了网吧里某台关着的电脑——音响亮了一下。）'},
+  {sender:'stranger',text:'明天。明天我会告诉你。'},
+],
+'qq_day7':[
+  {sender:'system',text:'—— 登录成功 ——'},
+  {sender:'stranger',text:'你来了。最后一天。'},
+  {sender:'stranger',text:'（对方没有用颜文字。这是第一次。）'},
+  {sender:'stranger',text:'我先跟你说一件事。那个QQ号——不止一个人在登录。', keyword:'shared_qq'},
+  {sender:'stranger',text:'每天晚上和你聊天的人——有时候是老李（他擅长写感情话题）。小林管文学。阿芳管音乐推荐。石头——石头只回过一次——那天你问CS怎么调控制台。王叔手太慢了。他一个月轮一次班。梅姨不登录。她说打字太累。但她会告诉我们该说什么。'},
+  {sender:'stranger',text:'所以你不知道在和谁聊天。我们也不知道在和谁被聊。'},
+  {sender:'stranger',text:'但现在——你真的想知道吗。今天晚上。只有一个人在线。TA等了你很久。', choices:[{text:'你是谁？'},{text:'不管你是谁。谢谢你陪我说话。'},{text:'（沉默。等待。）'}]},
+  {sender:'stranger',text:'我是……'},
+  {sender:'stranger',text:'——'},
+  {sender:'system',text:'（QQ消息中断。你等了很久。但你知道——TA就在这间网吧里。）'},
+],
+};
+
+/* 结局检查 — 在 endQQSession 中调用 */
+function checkEndings(){
+  const kw = STATE.keywords;
+  if(kw.includes('fire') && kw.includes('1999_12_31') && kw.includes('uncle_knows')){
+    // SE-1 条件满足 — 触发最终选择
+    setTimeout(()=>{
+      showChoices([
+        {text:'走向那面钟，把时间拨到12:00',action:()=>triggerEnding('SE1_empty_chair')},
+        {text:'继续经营。什么也不做。',action:()=>triggerEnding('HE1_connection')},
+      ]);
+    },2000);
+  } else if(kw.includes('stand_in') && kw.includes('fourth_person')){
+    setTimeout(()=>{ triggerEnding('SE2_cycle'); },2000);
+  } else if(kw.length >= 7){
+    setTimeout(()=>{ triggerEnding('TE_revelation'); },2000);
+  } else if(STATE.day >= 7){
+    setTimeout(()=>{ triggerEnding('HE2_journey'); },2000);
+  }
+}
+
+function triggerEnding(endingId){
+  const endings = {
+    'HE1_connection':{
+      title:'连线', desc:'你决定不追问。第二天，你给每个人都倒了一杯水。老李说"今天天气不错"。石头说"要一起打一局吗"。梅姨终于——笑了一下。网吧继续开着。那面钟还在11:59。但没关系。时间在这里本来就不重要。重要的是人还在。'
+    },
+    'HE2_journey':{
+      title:'远行', desc:'你决定离开。走之前，把网吧的钥匙放在了柜台上。石头看见了。他没有拿起来。他说："舅舅说——网吧里总得有人在。"但这一次，他没有坐下。他跟着你走出了门。门外是2003年的阳光。'
+    },
+    'TE_revelation':{
+      title:'默示录', desc:'你从未说出口——但你知道了。那些夜晚的对话、那些白天的沉默、那些人和他们背后的人。你没有去确认网友是谁。因为有些答案——比沉默更完整。网吧还在。你也在。他们也在。这就够了。'
+    },
+    'SE1_empty_chair':{
+      title:'空椅子', desc:'你走向那面钟。手指碰到指针的那一刻——钟开始走了。一秒。两秒。12:00。\n\n你转过身。网吧里空无一人。所有的电脑都关了。所有的椅子都空了。\n\n但你看见——每个座位上放着一件东西。老李的Word打印稿。小林的论文。阿芳橱窗模特的旧照片。王叔的鼠标。小周的Excel表格。陈警官的调查报告。石头的CS鼠标垫。梅姨的杯子。阿杰的——什么都没有的座位。\n\n那个角落。阿杰的电脑自己亮了。屏幕上——QQ自动登录。一个灰色头像在闪。\n\n最后一条消息：\n"谢谢你替我们守着这里。现在——你可以让我们走了。"\n\n你站在空荡荡的网吧里。日光灯还在嗡嗡地响。泡面还在货架上。那面钟——刚走过零点。\n\n你听到身后有声音。是九个人一起走过门口的声音。\n\n然后——安静。\n\n真正的安静。\n\n1999年12月31日的那个夜晚——终于结束了。'
+    },
+    'SE2_cycle':{
+      title:'循环', desc:'你明白了。你是第四任。每一任老板都会继承这间网吧——和里面的人。第一任在1999年火灾后失踪。第二任是你舅舅。第三任——你没有见过。\n\n但你还活着。所以第四任还没有开始。\n\n阿杰睁开眼睛。他说："等你准备好了——告诉我。我可以是第五任。"\n\n他在这里等了二十年。等的不是某个人——是等有人来替。\n\n你决定——'
+    },
+  };
+  const e = endings[endingId];
+  if(!e) return;
+  showDialogueBox(true);
+  addDialogue('—— '+e.title+' ——','');
+  // Split desc into lines
+  const lines = e.desc.split('\n');
+  lines.forEach(l=>{ if(l.trim()) addDialogue('旁白',l.trim()); });
+  STATE._onQueueEnd = ()=>{
+    showChoices([
+      {text:'重新开始',action:()=>{ location.reload(); }},
+      {text:'（继续留在这个结局里）',action:()=>{ showDialogueBox(false); }},
+    ]);
+  };
+  advanceDialogue();
+}
+
+// ============================================================
+// READY
+// ============================================================
+console.log('🖥️  网吧2003 v2 — 已就绪');
+console.log('🎵  BGM: Quiet Room At Three');
+console.log('🖼️  夜晚背景图: 夜晚网吧.jpg');
+console.log('⌨️  空格=对话 | Ctrl+K=线索板 | S=QQ发送');
+</script>
+
+</body>
+</html>
